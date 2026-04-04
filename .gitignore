@@ -13,8 +13,6 @@ build/
 # Environment variables
 .env
 
-# uv
-uv.lock
 
 # IDE
 .vscode/
