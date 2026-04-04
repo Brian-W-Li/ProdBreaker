@@ -39,6 +39,15 @@ curl http://localhost:${APP_PORT:-8000}/health
 | Prometheus | http://localhost:9090 | `PROMETHEUS_PORT` |
 | Alertmanager | http://localhost:9093 | `ALERTMANAGER_PORT` |
 
+**Key endpoints to verify the stack is working:**
+
+| Endpoint | What it checks |
+|---|---|
+| `GET /health` | App is up |
+| `GET /metrics` | Prometheus metrics being collected |
+| `GET /logs` | Structured JSON logs (add `?lines=N` for more) |
+| `GET /products` | DB + Redis cache (`X-Cache: HIT/MISS` header) |
+
 ---
 
 ## API Reference
