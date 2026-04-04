@@ -1,0 +1,33 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 1h
+  receiver: "null"
+
+  routes:
+    - match:
+        severity: critical
+      receiver: discord
+      repeat_interval: 15m
+    - match:
+        severity: warning
+      receiver: discord
+
+receivers:
+  - name: "null"
+  - name: discord
+    webhook_configs:
+      - url: "http://discord-alerts:9094"
+        send_resolved: true
+        http_config: {}
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ["alertname"]

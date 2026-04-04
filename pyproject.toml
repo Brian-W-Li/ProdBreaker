@@ -5,9 +5,18 @@ requires-python = ">=3.13"
 dependencies = [
     "faker>=33.0",
     "flask>=3.1",
+    "gunicorn>=25.3.0",
     "peewee>=3.17",
+    "prometheus-flask-exporter>=0.23.2",
     "psycopg2-binary>=2.9",
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     "python-dotenv>=1.0",
+    "redis>=7.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.1.0",
 ]

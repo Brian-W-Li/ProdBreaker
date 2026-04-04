@@ -2,6 +2,7 @@ from datetime import datetime
 from peewee import CharField, BooleanField, DateTimeField, ForeignKeyField
 from app.database import BaseModel
 from app.models.user import User
+from app.models.product import Product
 
 
 class URL(BaseModel):

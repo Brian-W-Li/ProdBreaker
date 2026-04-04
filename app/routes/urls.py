@@ -1,124 +1,143 @@
-# type: ignore
+import json
 import random
 import string
-import json
 from datetime import datetime
-from flask import Blueprint, jsonify, request, redirect
-from app.models.url import URL
+
+from flask import Blueprint, jsonify, request
+from peewee import IntegrityError
+
+from app.cache import cache_get, cache_set
+from app.database import db
 from app.models.event import Event
+from app.models.url import Url
 from app.models.user import User
 
-urls_bp = Blueprint("urls", __name__)
+urls_bp = Blueprint("urls", __name__, url_prefix="/urls")
 
 
-def generate_short_code(length=6):
+def _generate_short_code(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
-@urls_bp.route("/shorten", methods=["POST"])
-def shorten_url():
-    data = request.get_json()
+def _url_dict(url):
+    return {
+        "id": url.id,
+        "user_id": url.user_id,
+        "short_code": url.short_code,
+        "original_url": url.original_url,
+        "title": url.title,
+        "is_active": url.is_active,
+        "created_at": url.created_at.isoformat() if url.created_at else None,
+        "updated_at": url.updated_at.isoformat() if url.updated_at else None,
+    }
 
-    if not data or not data.get("url"):
-        return jsonify(error="Missing 'url' field"), 400
 
-    original_url = data["url"]
-    if not original_url.startswith(("http://", "https://")):
-        return jsonify(error="URL must start with http:// or https://"), 400
+@urls_bp.route("", methods=["POST"])
+def create_url():
+    data = request.get_json(silent=True) or {}
 
-    title = data.get("title")
     user_id = data.get("user_id")
+    original_url = data.get("original_url")
+    title = data.get("title")
 
-    if not user_id:
-        return jsonify(error="Missing 'user_id' field"), 400
+    if not user_id or not original_url:
+        return jsonify(error="Bad Request", message="user_id and original_url are required"), 400
 
     try:
         user = User.get_by_id(user_id)
     except User.DoesNotExist:
-        return jsonify(error="User not found"), 404
+        return jsonify(error="Not Found", message=f"User {user_id} not found"), 404
 
-    for _ in range(5):
-        code = generate_short_code()
-        if not URL.select().where(URL.short_code == code).exists():
+    # Attempt INSERT with random short_code, retry only on collision (extremely rare)
+    url = None
+    for _ in range(10):
+        try:
+            short_code = _generate_short_code()
+            with db.atomic():
+                url = Url.create(
+                    user=user,
+                    short_code=short_code,
+                    original_url=original_url,
+                    title=title,
+                )
+                Event.create(
+                    url=url,
+                    user=user,
+                    event_type='created',
+                    details=json.dumps({"short_code": short_code, "original_url": original_url}),
+                )
             break
-    else:
-        return jsonify(error="Could not generate unique code, try again"), 500
+        except IntegrityError:
+            continue
 
-    url = URL.create(
-        user=user,
-        short_code=code,
-        original_url=original_url,
-        title=title,
-    )
+    if url is None:
+        return jsonify(error="Internal Server Error", message="Could not generate unique short code"), 500
 
-    Event.create(
-        url=url,
-        user=user,
-        event_type="created",
-        details=json.dumps({"short_code": code, "original_url": original_url})
-    )
-
-    return jsonify(short_code=url.short_code, url=f"/{url.short_code}"), 201
+    return jsonify(_url_dict(url)), 201
 
 
-@urls_bp.route("/<short_code>", methods=["GET"])
-def redirect_url(short_code):
+@urls_bp.route("", methods=["GET"])
+def list_urls():
+    user_id = request.args.get("user_id")
     try:
-        url = URL.get(URL.short_code == short_code)
-    except URL.DoesNotExist:
-        return jsonify(error="Short code not found"), 404
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 20))
+    except (ValueError, TypeError):
+        return jsonify(error="Bad Request", message="page and per_page must be integers"), 400
 
-    if not url.is_active:
-        return jsonify(error="This link has been deactivated"), 410
+    cache_key = f"urls:uid{user_id}:p{page}:pp{per_page}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
 
-    Event.create(
-        url=url,
-        user=url.user,
-        event_type="clicked",
-        details=json.dumps({"short_code": short_code})
-    )
+    query = Url.select()
+    if user_id is not None:
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            return jsonify(error="Bad Request", message="user_id must be an integer"), 400
+        query = query.where(Url.user_id == user_id)
 
-    return redirect(url.original_url)
+    offset = (page - 1) * per_page
+    urls = query.order_by(Url.id).offset(offset).limit(per_page)
+    data = [_url_dict(u) for u in urls]
+    cache_set(cache_key, data, ttl=10)
+    return jsonify(data), 200
 
 
-@urls_bp.route("/stats/<short_code>", methods=["GET"])
-def url_stats(short_code):
+@urls_bp.route("/<int:url_id>", methods=["GET"])
+def get_url(url_id):
     try:
-        url = URL.get(URL.short_code == short_code)
-    except URL.DoesNotExist:
-        return jsonify(error="Short code not found"), 404
-
-    clicks = Event.select().where(
-        Event.url == url,
-        Event.event_type == "clicked"
-    ).count()
-
-    return jsonify(
-        short_code=url.short_code,
-        original_url=url.original_url,
-        title=url.title,
-        clicks=clicks,
-        created_at=str(url.created_at),
-        is_active=url.is_active
-    )
+        url = Url.get_by_id(url_id)
+    except Url.DoesNotExist:
+        return jsonify(error="Not Found", message=f"URL {url_id} not found"), 404
+    return jsonify(_url_dict(url)), 200
 
 
-@urls_bp.route("/urls/<short_code>", methods=["DELETE"])
-def deactivate_url(short_code):
+@urls_bp.route("/<int:url_id>", methods=["PUT"])
+def update_url(url_id):
     try:
-        url = URL.get(URL.short_code == short_code)
-    except URL.DoesNotExist:
-        return jsonify(error="Short code not found"), 404
+        url = Url.get_by_id(url_id)
+    except Url.DoesNotExist:
+        return jsonify(error="Not Found", message=f"URL {url_id} not found"), 404
 
-    url.is_active = False
-    url.updated_at = datetime.now()
-    url.save()
+    data = request.get_json(silent=True) or {}
 
-    Event.create(
-        url=url,
-        user=url.user,
-        event_type="deactivated",
-        details=json.dumps({"short_code": short_code})
-    )
+    if "title" in data:
+        url.title = data["title"]
 
-    return jsonify(message="URL deactivated"), 200
+    if "is_active" in data:
+        url.is_active = data["is_active"]
+
+    url.updated_at = datetime.utcnow()
+
+    with db.atomic():
+        url.save()
+        Event.create(
+            url=url,
+            user_id=url.user_id,
+            event_type='updated',
+            details=json.dumps({"short_code": url.short_code, "original_url": url.original_url}),
+        )
+
+    return jsonify(_url_dict(url)), 200

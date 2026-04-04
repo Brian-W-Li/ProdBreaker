@@ -1,3 +1,6 @@
+import io
+from unittest.mock import MagicMock, patch
+
 import pytest
 from peewee import SqliteDatabase
 from dotenv import load_dotenv
@@ -8,7 +11,21 @@ from app.models.url import URL
 from app.models.event import Event
 
 load_dotenv()
+# Patch cache to no-ops for all tests — prevents cross-test pollution via real Redis
+_cache_patches = [
+    patch("app.cache.cache_get", return_value=None),
+    patch("app.cache.cache_set", return_value=None),
+]
 
+
+def pytest_configure(config):
+    for p in _cache_patches:
+        p.start()
+
+
+def pytest_unconfigure(config):
+    for p in _cache_patches:
+        p.stop()
 
 @pytest.fixture(scope="session")
 def app():
