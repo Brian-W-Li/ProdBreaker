@@ -7,6 +7,28 @@ from app.models.event import Event
 
 app = create_app()
 
+def reset_postgres_sequences():
+    def _reset(table_sql: str, pk_column: str = "id"):
+        seq = db.execute_sql(
+            "SELECT pg_get_serial_sequence(%s, %s);",
+            (table_sql, pk_column),
+        ).fetchone()[0]
+        if not seq:
+            return
+
+        max_id = db.execute_sql(
+            f'SELECT COALESCE(MAX("{pk_column}"), 0) FROM {table_sql};'
+        ).fetchone()[0]
+
+        if max_id and int(max_id) > 0:
+            db.execute_sql("SELECT setval(%s, %s, true);", (seq, int(max_id)))
+        else:
+            db.execute_sql("SELECT setval(%s, 1, false);", (seq,))
+
+    _reset('"user"')
+    _reset('"url"')
+    _reset('"event"')
+
 def load_users(filepath):
     with open(filepath, newline="") as f:
         reader = csv.DictReader(f)
@@ -62,3 +84,4 @@ if __name__ == "__main__":
     load_users("users.csv")
     load_urls("urls.csv")
     load_events("events.csv")
+    reset_postgres_sequences()

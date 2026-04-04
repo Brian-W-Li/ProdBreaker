@@ -9,12 +9,14 @@ def create_app():
     app = Flask(__name__)
     init_db(app)
 
-    from app import models  # noqa: F401
     from app.models.user import User
     from app.models.url import URL
     from app.models.event import Event
-    from app.database import db
-    db.create_tables([User, URL, Event], safe=True)
+    from app import models  # noqa: F401
+
+    with app.app_context():
+        from app.database import db
+        db.create_tables([User, URL, Event], safe=True)
 
     register_routes(app)
 
