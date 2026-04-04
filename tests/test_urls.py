@@ -138,3 +138,35 @@ def test_update_url_creates_event(db_client):
 def test_update_url_not_found(db_client):
     resp = db_client.put("/urls/9999", json={"title": "x"})
     assert resp.status_code == 404
+
+
+# ── GET /<short_code> (redirect) ──────────────────────────────────────────────
+
+def test_redirect_follows_short_code(db_client):
+    user = make_user(db_client, "judy", "judy@x.com")
+    url = make_url(db_client, user["id"], "https://example.com")
+    resp = db_client.get(f"/{url['short_code']}", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "https://example.com"
+
+
+def test_redirect_logs_clicked_event(db_client):
+    user = make_user(db_client, "kate", "kate@x.com")
+    url = make_url(db_client, user["id"], "https://example.com")
+    db_client.get(f"/{url['short_code']}", follow_redirects=False)
+    events = db_client.get("/events").get_json()
+    types = [e["event_type"] for e in events]
+    assert "clicked" in types
+
+
+def test_redirect_inactive_url_returns_410(db_client):
+    user = make_user(db_client, "leo", "leo@x.com")
+    url = make_url(db_client, user["id"], "https://example.com")
+    db_client.put(f"/urls/{url['id']}", json={"is_active": False})
+    resp = db_client.get(f"/{url['short_code']}", follow_redirects=False)
+    assert resp.status_code == 410
+
+
+def test_redirect_unknown_short_code_returns_404(db_client):
+    resp = db_client.get("/xxxxxx", follow_redirects=False)
+    assert resp.status_code == 404

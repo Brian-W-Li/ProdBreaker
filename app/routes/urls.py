@@ -3,7 +3,7 @@ import random
 import string
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
 from app.cache import cache_get, cache_set
@@ -13,6 +13,7 @@ from app.models.url import Url
 from app.models.user import User
 
 urls_bp = Blueprint("urls", __name__, url_prefix="/urls")
+redirect_bp = Blueprint("redirect", __name__)
 
 
 def _generate_short_code(length=6):
@@ -141,3 +142,24 @@ def update_url(url_id):
         )
 
     return jsonify(_url_dict(url)), 200
+
+
+@redirect_bp.route("/<short_code>")
+def redirect_url(short_code):
+    try:
+        url = Url.get(Url.short_code == short_code)
+    except Url.DoesNotExist:
+        return jsonify(error="Not Found", message=f"Short code '{short_code}' not found"), 404
+
+    if not url.is_active:
+        return jsonify(error="Gone", message="This shortened URL has been deactivated"), 410
+
+    with db.atomic():
+        Event.create(
+            url=url,
+            user_id=url.user_id,
+            event_type='clicked',
+            details=json.dumps({"short_code": short_code, "original_url": url.original_url}),
+        )
+
+    return redirect(url.original_url, code=302)
