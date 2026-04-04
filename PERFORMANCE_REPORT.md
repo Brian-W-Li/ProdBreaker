@@ -27,11 +27,11 @@ Redis caching is applied to all list endpoints:
 
 ```
 # First request — fetches from DB, writes to Redis
-curl -I http://localhost:8000/products
+curl -I http://localhost:${APP_PORT:-8000}/products
 X-Cache: MISS   time: 30ms
 
 # Subsequent requests within TTL — served from Redis
-curl -I http://localhost:8000/products
+curl -I http://localhost:${APP_PORT:-8000}/products
 X-Cache: HIT    time: 8ms
 ```
 

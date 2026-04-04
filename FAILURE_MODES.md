@@ -24,7 +24,7 @@ Run with [k6](https://k6.io/docs/get-started/installation/) after `docker compos
 ```bash
 k6 run load_test.js
 # or target a different host:
-k6 run -e BASE_URL=http://localhost:8000 load_test.js
+k6 run -e BASE_URL=http://localhost:${APP_PORT:-8000} load_test.js
 ```
 
 Ramps to 500 virtual users over 90 seconds. Thresholds: `<5% error rate`, `p95 < 500ms`.
@@ -50,9 +50,9 @@ HTTP 503.
 **To reproduce:**
 ```bash
 docker compose stop db
-curl http://localhost:8000/products  # → 503
+curl http://localhost:${APP_PORT:-8000}/products  # → 503
 docker compose start db
-curl http://localhost:8000/products  # → 200
+curl http://localhost:${APP_PORT:-8000}/products  # → 200
 ```
 
 ---
@@ -74,9 +74,9 @@ HTTP 503. No stack trace exposed to the client.
 **To reproduce:**
 ```bash
 docker compose kill db
-curl http://localhost:8000/products  # → 503 JSON
+curl http://localhost:${APP_PORT:-8000}/products  # → 503 JSON
 docker compose start db
-curl http://localhost:8000/products  # → 200
+curl http://localhost:${APP_PORT:-8000}/products  # → 200
 ```
 
 ---
@@ -93,7 +93,7 @@ curl http://localhost:8000/products  # → 200
 ```bash
 docker compose kill web           # kills container
 docker compose up web -d          # manually start (or let Docker restart on daemon restart)
-curl http://localhost:8000/health # → 200
+curl http://localhost:${APP_PORT:-8000}/health # → 200
 ```
 
 **Note:** `docker compose kill` and `docker compose stop` are treated as intentional — Docker will NOT auto-restart in those cases. The policy fires on OOM kills, process crashes, and Docker daemon restarts.

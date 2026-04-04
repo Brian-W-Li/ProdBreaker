@@ -23,12 +23,12 @@ curl http://localhost:${APP_PORT:-8000}/health
 # → {"status": "ok"}
 ```
 
-| Service | URL |
-|---|---|
-| API | http://localhost:`APP_PORT` (default `8000`) |
-| Grafana | http://localhost:3000 (admin / admin) |
-| Prometheus | http://localhost:9090 |
-| Alertmanager | http://localhost:9093 |
+| Service | Default URL | Env var to change port |
+|---|---|---|
+| API | http://localhost:8000 | `APP_PORT` |
+| Grafana | http://localhost:3000 | `GRAFANA_PORT` |
+| Prometheus | http://localhost:9090 | `PROMETHEUS_PORT` |
+| Alertmanager | http://localhost:9093 | `ALERTMANAGER_PORT` |
 
 ---
 
@@ -148,7 +148,7 @@ Grafana dashboard auto-loads at http://localhost:3000 with 10 panels:
 - Redis memory > 80%
 - Flask app unreachable
 
-Set `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...` in `.env` to enable.
+Set your webhook URL directly in [monitoring/alertmanager/alertmanager.yml](monitoring/alertmanager/alertmanager.yml) — replace the `url:` value under the `discord` receiver, then `docker compose restart alertmanager`.
 
 ---
 
@@ -206,14 +206,17 @@ ProdBreaker/
 
 | Variable | Default | Description |
 |---|---|---|
-| `APP_PORT` | `8000` | Exposed API port in Docker and local Flask port |
+| `APP_PORT` | `8000` | Host port for the API |
+| `GRAFANA_PORT` | `3000` | Host port for Grafana |
+| `PROMETHEUS_PORT` | `9090` | Host port for Prometheus |
+| `ALERTMANAGER_PORT` | `9093` | Host port for Alertmanager |
 | `DATABASE_NAME` | `hackathon_db` | Postgres database name |
-| `DATABASE_HOST` | `db` | Postgres host (`localhost` for local dev) |
-| `DATABASE_PORT` | `5432` | Postgres port |
+| `DATABASE_HOST` | `db` | Postgres host (`localhost` for local dev without Docker) |
+| `DATABASE_PORT` | `5432` | Host port for Postgres |
 | `DATABASE_USER` | `postgres` | Postgres user |
 | `DATABASE_PASSWORD` | `postgres` | Postgres password |
-| `REDIS_HOST` | `localhost` | Redis host (`redis` in Docker) |
-| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_HOST` | `redis` | Redis host (`localhost` for local dev without Docker) |
+| `REDIS_PORT` | `6379` | Host port for Redis |
 | `GRAFANA_PASSWORD` | `admin` | Grafana admin password |
-| `DISCORD_WEBHOOK_URL` | — | Discord webhook for alerts |
+| `DISCORD_WEBHOOK_URL` | — | Discord webhook for alerts (set in `.env`, picked up by docker-compose) |
 | `FLASK_DEBUG` | `true` | Enable Flask debug mode |

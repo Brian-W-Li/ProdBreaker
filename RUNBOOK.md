@@ -6,13 +6,13 @@
 
 ## Quick Links
 
-| Tool | URL |
-|---|---|
-| Grafana | http://localhost:3000 (admin / see `.env`) |
-| Prometheus | http://localhost:9090 |
-| Alertmanager | http://localhost:9093 |
-| App health | http://localhost:8000/health |
-| App metrics | http://localhost:8000/metrics |
+| Tool | Default URL | Override via `.env` |
+|---|---|---|
+| Grafana | http://localhost:3000 (admin / see `.env`) | `GRAFANA_PORT` |
+| Prometheus | http://localhost:9090 | `PROMETHEUS_PORT` |
+| Alertmanager | http://localhost:9093 | `ALERTMANAGER_PORT` |
+| App health | http://localhost:${APP_PORT:-8000}/health | `APP_PORT` |
+| App metrics | http://localhost:${APP_PORT:-8000}/metrics | `APP_PORT` |
 
 ---
 
@@ -22,8 +22,8 @@
 
 **Step 1 — Confirm:**
 ```bash
-curl -s http://localhost:8000/health
-curl -s http://localhost:8000/products
+curl -s http://localhost:${APP_PORT:-8000}/health
+curl -s http://localhost:${APP_PORT:-8000}/products
 ```
 
 **Step 2 — Check logs:**
@@ -54,7 +54,7 @@ docker compose down && docker compose up -d
 
 **Step 1 — Check if it's the cache:**
 ```bash
-curl -I http://localhost:8000/products | grep X-Cache
+curl -I http://localhost:${APP_PORT:-8000}/products | grep X-Cache
 ```
 - `X-Cache: MISS` on every request → Redis is down or cache TTL expired under load.
 
@@ -84,7 +84,7 @@ docker compose restart web
 
 **Step 1:**
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:${APP_PORT:-8000}/health
 ```
 - Timeout → Nginx is down: `docker compose restart nginx`
 - 502 → Web is down: `docker compose restart web`
@@ -166,7 +166,7 @@ docker compose ps
 k6 run load_test.js
 
 # Check metrics endpoint
-curl http://localhost:8000/metrics | grep flask_http
+curl http://localhost:${APP_PORT:-8000}/metrics | grep flask_http
 ```
 
 ---
