@@ -23,6 +23,9 @@ build/
 # pytest
 .pytest_cache/
 
+# Logs
+logs/
+
 # OS
 .DS_Store
 Thumbs.db

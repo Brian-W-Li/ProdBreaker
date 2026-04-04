@@ -33,6 +33,9 @@ services:
     env_file: .env
     environment:
       REDIS_HOST: redis
+      LOG_FILE: /app/logs/app.log
+    volumes:
+      - app_logs:/app/logs
     restart: unless-stopped
     depends_on:
       db:
@@ -130,3 +133,4 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  app_logs:

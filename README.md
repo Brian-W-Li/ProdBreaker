@@ -75,6 +75,22 @@ curl http://localhost:${APP_PORT:-8000}/health
 |---|---|---|
 | `GET` | `/events` | List all events (`created`, `updated`, `clicked`) |
 
+### Logs
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/logs` | Returns last 100 log entries as a JSON array. Use `?lines=N` to override (max 1000). |
+
+Log entries look like:
+```json
+[
+  {"timestamp": "2026-04-04 22:43:09,858", "level": "INFO", "logger": "app", "message": "request started", "method": "GET", "path": "/health"},
+  {"timestamp": "2026-04-04 22:43:09,862", "level": "INFO", "logger": "app", "message": "request finished", "method": "GET", "path": "/health", "status": 200, "duration_ms": 4.07}
+]
+```
+
+Logs are written to a Docker volume (`app_logs`) so they persist across container restarts.
+
 ### Response formats
 
 All errors return JSON:
@@ -191,11 +207,13 @@ ProdBreaker/
 │   │   ├── user.py              # User model
 │   │   ├── url.py               # Url model (short codes)
 │   │   └── event.py             # Event model (analytics)
+│   ├── logging_config.py        # JSON structured logging (stdout + file)
 │   └── routes/
 │       ├── products.py          # GET /products
 │       ├── users.py             # /users CRUD + bulk
 │       ├── urls.py              # /urls CRUD
-│       └── events.py            # GET /events
+│       ├── events.py            # GET /events
+│       └── logs.py              # GET /logs (view logs without SSH)
 ├── monitoring/
 │   ├── prometheus/              # prometheus.yml + alerts.yml
 │   ├── alertmanager/            # alertmanager.yml (Discord routing)
@@ -265,3 +283,4 @@ The SQLite in-memory connection was closed between requests. Flask's `teardown_a
 | `GRAFANA_PASSWORD` | `admin` | Grafana admin password |
 | `DISCORD_WEBHOOK_URL` | — | Discord webhook for alerts (set in `.env`, picked up by docker-compose) |
 | `FLASK_DEBUG` | `true` | Enable Flask debug mode |
+| `LOG_FILE` | `logs/app.log` | Path to the JSON log file (inside container: `/app/logs/app.log`) |

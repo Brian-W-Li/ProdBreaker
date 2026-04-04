@@ -1,7 +1,10 @@
 import logging
+import os
 import sys
 
 from pythonjsonlogger.json import JsonFormatter
+
+LOG_FILE = os.environ.get("LOG_FILE", "logs/app.log")
 
 
 def configure_logging(app):
@@ -10,12 +13,16 @@ def configure_logging(app):
         rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
     )
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler.setFormatter(formatter)
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-    root.handlers = [handler]
+    root.handlers = [stdout_handler, file_handler]
 
     # Flask's logger inherits from root; suppress its default handlers
     app.logger.propagate = True
