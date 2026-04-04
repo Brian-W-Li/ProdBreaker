@@ -235,6 +235,8 @@ dependencies = [
     { name = "peewee" },
     { name = "prometheus-flask-exporter" },
     { name = "psycopg2-binary" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
     { name = "python-dotenv" },
     { name = "redis" },
 ]
@@ -253,6 +255,8 @@ requires-dist = [
     { name = "peewee", specifier = ">=3.17" },
     { name = "prometheus-flask-exporter", specifier = ">=0.23.2" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "redis", specifier = ">=7.4.0" },
 ]

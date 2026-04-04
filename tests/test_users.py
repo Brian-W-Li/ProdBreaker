@@ -121,8 +121,9 @@ def test_update_user_invalid_type(db_client):
 
 def test_bulk_import_basic(db_client):
     csv_data = make_csv([
-        {"username": "bulk1", "email": "bulk1@x.com"},
-        {"username": "bulk2", "email": "bulk2@x.com"},
+        ["username", "email"],
+        ["bulk1", "bulk1@example.com"],
+        ["bulk2", "bulk2@example.com"],
     ])
     resp = db_client.post("/users/bulk", data={"file": (io.BytesIO(csv_data), "users.csv")})
     assert resp.status_code == 201
@@ -131,7 +132,8 @@ def test_bulk_import_basic(db_client):
 
 def test_bulk_import_with_created_at(db_client):
     csv_data = make_csv([
-        {"username": "ts1", "email": "ts1@x.com", "created_at": "2024-04-09T02:51:03"},
+        ["username", "email", "created_at"],
+        ["ts1", "ts1@x.com", "2024-04-09T02:51:03"],
     ])
     resp = db_client.post("/users/bulk", data={"file": (io.BytesIO(csv_data), "users.csv")})
     assert resp.status_code == 201
@@ -143,8 +145,9 @@ def test_bulk_import_with_created_at(db_client):
 def test_bulk_import_skips_duplicates(db_client):
     make_user(db_client, "existing", "existing@x.com")
     csv_data = make_csv([
-        {"username": "existing", "email": "existing@x.com"},
-        {"username": "newone", "email": "newone@x.com"},
+        ["username", "email"],
+        ["existing", "existing@x.com"],
+        ["newone", "newone@x.com"],
     ])
     resp = db_client.post("/users/bulk", data={"file": (io.BytesIO(csv_data), "users.csv")})
     assert resp.status_code == 201

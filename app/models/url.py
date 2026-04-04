@@ -5,7 +5,7 @@ from app.models.user import User
 from app.models.product import Product
 
 
-class URL(BaseModel):
+class Url(BaseModel):
     user = ForeignKeyField(User, backref="urls")
     short_code = CharField(unique=True)
     original_url = CharField()

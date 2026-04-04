@@ -138,10 +138,10 @@ def update_user(user_id):
 
 @users_bp.route("/<int:user_id>/urls", methods=["GET"])
 def user_urls(user_id):
-    from app.models.url import URL
+    from app.models.url import Url
     try:
         user = User.get_by_id(user_id)
-        urls = URL.select().where(URL.user == user)
+        urls = Url.select().where(Url.user == user)
         return jsonify([{
             "short_code": u.short_code,
             "original_url": u.original_url,

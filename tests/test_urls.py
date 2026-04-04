@@ -122,7 +122,7 @@ def test_update_url_updates_timestamp(db_client):
     url = make_url(db_client, user["id"])
     original_updated_at = url["updated_at"]
     resp = db_client.put(f"/urls/{url['id']}", json={"title": "Changed"})
-    assert resp.get_json()["updated_at"] >= original_updated_at
+    assert resp.get_json()["updated_at"] != original_updated_at
 
 
 def test_update_url_creates_event(db_client):

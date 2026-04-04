@@ -14,13 +14,13 @@ def create_app():
     init_db(app)
 
     from app.models.user import User
-    from app.models.url import URL
+    from app.models.url import Url
     from app.models.event import Event
     from app import models  # noqa: F401
 
     with app.app_context():
         from app.database import db
-        db.create_tables([User, URL, Event], safe=True)
+        db.create_tables([User, Url, Event], safe=True)
 
     register_routes(app)
 
