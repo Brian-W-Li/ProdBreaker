@@ -61,10 +61,10 @@ def load_csv(filepath):
     if kind == "user":
         data = [
             {
-                "id": int(r["id"]),
-                "username": r["username"],
-                "email": r["email"],
-                "created_at": _dt(r["created_at"]),
+                "id": int(r["id"]) if r.get("id") else None,
+                "username": r.get("username"),
+                "email": r.get("email"),
+                "created_at": _dt(r.get("created_at")),
             }
             for r in rows
         ]
@@ -73,14 +73,14 @@ def load_csv(filepath):
     elif kind == "url":
         data = [
             {
-                "id": int(r["id"]),
-                "user_id": int(r["user_id"]),
-                "short_code": r["short_code"],
-                "original_url": r["original_url"],
-                "title": r["title"] or None,
-                "is_active": r["is_active"].strip().lower() == "true",
-                "created_at": _dt(r["created_at"]),
-                "updated_at": _dt(r["updated_at"]),
+                "id": int(r["id"]) if r.get("id") else None,
+                "user_id": int(r["user_id"]) if r.get("user_id") else None,
+                "short_code": r.get("short_code"),
+                "original_url": r.get("original_url"),
+                "title": r.get("title") or None,
+                "is_active": str(r.get("is_active", "")).strip().lower() == "true",
+                "created_at": _dt(r.get("created_at")),
+                "updated_at": _dt(r.get("updated_at")),
             }
             for r in rows
         ]
@@ -89,20 +89,28 @@ def load_csv(filepath):
     elif kind == "event":
         data = [
             {
-                "id": int(r["id"]),
-                "url_id": int(r["url_id"]),
-                "user_id": int(r["user_id"]),
-                "event_type": r["event_type"],
-                "timestamp": _dt(r["timestamp"]),
-                "details": r["details"],
+                "id": int(r["id"]) if r.get("id") else None,
+                "url_id": int(r["url_id"]) if r.get("url_id") else None,
+                "user_id": int(r["user_id"]) if r.get("user_id") else None,
+                "event_type": r.get("event_type"),
+                "timestamp": _dt(r.get("timestamp")),
+                "details": r.get("details"),
             }
             for r in rows
         ]
         model = Event
 
     else:
-        # original product behaviour
-        data = rows
+        data = [
+            {
+                "id": int(r["id"]) if r.get("id") else None,
+                "name": r.get("name"),
+                "price": float(r["price"]) if r.get("price") else 0.0,
+                "stock": int(r["stock"]) if r.get("stock") else 0,
+                "description": r.get("description"),
+            }
+            for r in rows
+        ]
         model = Product
 
     with db.atomic():
