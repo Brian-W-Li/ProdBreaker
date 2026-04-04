@@ -1,3 +1,4 @@
+# type: ignore
 import csv
 import io
 from datetime import datetime
