@@ -12,6 +12,7 @@ dependencies = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     "python-dotenv>=1.0",
+    "python-json-logger>=3.3.0",
     "redis>=7.4.0",
 ]
 

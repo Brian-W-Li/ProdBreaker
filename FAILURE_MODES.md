@@ -147,3 +147,21 @@ HTTP 500. Stack trace never reaches the client.
 **What happens:** `os.environ.get(...)` falls back to defaults (`localhost`, `postgres`, `hackathon_db`). If those defaults don't match the real DB, see Failure Mode 1.
 
 **Recovery:** Ensure `.env` is present and correct before starting.
+
+---
+
+## 8. Corrupt or Malformed Data Ingestion (CSV)
+
+**Cause:** `products.csv` or other seeding files contain non-numeric data in numeric columns (e.g., "Price: 10" instead of "10").
+
+**What happens:** The `load_csv.py` script uses explicit type casting (`int()`, `float()`) wrapped in `try-except` blocks. 
+
+**Observed behavior:**
+- **Robustness:** The script does NOT crash or stop execution.
+- **Graceful Skipping:** Faulty rows are caught, an error is logged to stderr, and the script continues to process the next valid row.
+- **Data Integrity:** Only valid, correctly-typed data is committed to the PostgreSQL database.
+
+**To reproduce:**
+1. Manually edit `products.csv` to include a string in the `price` column.
+2. Run `uv run load_csv.py products.csv`.
+3. Observe the log output showing the skipped row while other products are successfully loaded.

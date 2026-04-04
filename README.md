@@ -67,12 +67,13 @@ curl http://localhost:${APP_PORT:-8000}/health
 | `GET` | `/urls` | List all URLs (supports `?user_id=`) |
 | `GET` | `/urls/<id>` | Get URL by ID |
 | `PUT` | `/urls/<id>` | Update `title` and/or `is_active` |
+| `GET` | `/<short_code>` | Redirect to original URL (302); 410 if deactivated |
 
 ### Events / Analytics
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/events` | List all events (`created`, `updated`) |
+| `GET` | `/events` | List all events (`created`, `updated`, `clicked`) |
 
 ### Response formats
 
@@ -105,14 +106,14 @@ uv run run.py                  # starts on APP_PORT (default 8000)
 uv run pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-**49 tests, 86% coverage.** Tests use in-memory SQLite — no Postgres or Redis required.
+**53 tests, 86% coverage.** Tests use in-memory SQLite — no Postgres or Redis required.
 
 ```
 tests/test_health.py     — health endpoint
 tests/test_errors.py     — 404/405 return JSON not HTML
 tests/test_products.py   — products route + Redis cache + chaos
 tests/test_users.py      — full user CRUD + bulk CSV
-tests/test_urls.py       — full URL CRUD + short code + events
+tests/test_urls.py       — full URL CRUD + short code + redirect + events
 tests/test_events.py     — event listing and detail parsing
 ```
 
