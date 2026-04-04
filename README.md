@@ -19,13 +19,13 @@ cp .env.example .env   # add DISCORD_WEBHOOK_URL if you want alerts
 docker compose up --build -d
 
 # 4. Verify
-curl http://localhost:8000/health
+curl http://localhost:${APP_PORT:-8000}/health
 # → {"status": "ok"}
 ```
 
 | Service | URL |
 |---|---|
-| API | http://localhost:8000 |
+| API | http://localhost:`APP_PORT` (default `8000`) |
 | Grafana | http://localhost:3000 (admin / admin) |
 | Prometheus | http://localhost:9090 |
 | Alertmanager | http://localhost:9093 |
@@ -84,8 +84,8 @@ Cache header on `/products`: `X-Cache: HIT` or `X-Cache: MISS`
 
 ```bash
 uv sync                        # install dependencies
-cp .env.example .env           # set DATABASE_HOST=localhost
-uv run run.py                  # starts on port 8000
+cp .env.example .env           # set DATABASE_HOST=localhost for local Postgres
+uv run run.py                  # starts on APP_PORT (default 8000)
 ```
 
 ---
@@ -206,6 +206,7 @@ ProdBreaker/
 
 | Variable | Default | Description |
 |---|---|---|
+| `APP_PORT` | `8000` | Exposed API port in Docker and local Flask port |
 | `DATABASE_NAME` | `hackathon_db` | Postgres database name |
 | `DATABASE_HOST` | `db` | Postgres host (`localhost` for local dev) |
 | `DATABASE_PORT` | `5432` | Postgres port |
