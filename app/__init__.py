@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from flask import Flask, jsonify
+from prometheus_flask_exporter import PrometheusMetrics
 
 from app.database import init_db
 from app.routes import register_routes
@@ -9,10 +10,17 @@ def create_app():
     load_dotenv()
 
     app = Flask(__name__)
+    PrometheusMetrics(app)
 
     init_db(app)
 
     from app import models  # noqa: F401 - registers models with Peewee
+    from app.database import db
+    from app.models.product import Product
+    from app.models.user import User
+    from app.models.url import Url
+    from app.models.event import Event
+    db.create_tables([Product, User, Url, Event], safe=True)
 
     register_routes(app)
 

@@ -1,192 +1,218 @@
-# MLH PE Hackathon — Flask + Peewee + PostgreSQL Template
+# ProdBreaker — URL Shortener API
 
-A minimal hackathon starter template. You get the scaffolding and database wiring — you build the models, routes, and CSV loading logic.
+A production-grade URL shortener built on Flask · Peewee · PostgreSQL · Redis · Nginx · Gunicorn, with full observability (Prometheus + Grafana), load testing (k6), and chaos engineering.
 
-**Stack:** Flask · Peewee ORM · PostgreSQL · uv
+**Stack:** Flask · Peewee ORM · PostgreSQL 16 · Redis 7 · Gunicorn · Nginx · Prometheus · Grafana · Docker Compose · uv
 
-## **Important**
-
-You need to work with around the seed files that you can find in [MLH PE Hackathon](https://mlh-pe-hackathon.com) platform. This will help you build the schema for the database and have some data to do some testing and submit your project for judging. If you need help with this, reach out on Discord or on the Q&A tab on the platform.
-
-## Prerequisites
-
-- **uv** — a fast Python package manager that handles Python versions, virtual environments, and dependencies automatically.
-  Install it with:
-  ```bash
-  # macOS / Linux
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-
-  # Windows (PowerShell)
-  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-  ```
-  For other methods see the [uv installation docs](https://docs.astral.sh/uv/getting-started/installation/).
-- PostgreSQL running locally (you can use Docker or a local instance)
-
-## uv Basics
-
-`uv` manages your Python version, virtual environment, and dependencies automatically — no manual `python -m venv` needed.
-
-| Command | What it does |
-|---------|--------------|
-| `uv sync` | Install all dependencies (creates `.venv` automatically) |
-| `uv run <script>` | Run a script using the project's virtual environment |
-| `uv add <package>` | Add a new dependency |
-| `uv remove <package>` | Remove a dependency |
+---
 
 ## Quick Start
 
 ```bash
-# 1. Clone the repo
-git clone <repo-url> && cd mlh-pe-hackathon
+# 1. Clone
+git clone <repo-url> && cd ProdBreaker
 
-# 2. Install dependencies
-uv sync
+# 2. Configure
+cp .env.example .env   # add DISCORD_WEBHOOK_URL if you want alerts
 
-# 3. Create the database
-createdb hackathon_db
+# 3. Start everything
+docker compose up --build -d
 
-# 4. Configure environment
-cp .env.example .env   # edit if your DB credentials differ
-
-# 5. Run the server
-uv run run.py
-
-# 6. Verify
+# 4. Verify
 curl http://localhost:8000/health
-# → {"status":"ok"}
+# → {"status": "ok"}
 ```
+
+| Service | URL |
+|---|---|
+| API | http://localhost:8000 |
+| Grafana | http://localhost:3000 (admin / admin) |
+| Prometheus | http://localhost:9090 |
+| Alertmanager | http://localhost:9093 |
+
+---
+
+## API Reference
+
+### Health
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Liveness check — always 200 if app is running |
+
+### Users
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/users` | Create a user `{username, email}` |
+| `GET` | `/users` | List all users (supports `?page=&per_page=`) |
+| `GET` | `/users/<id>` | Get user by ID |
+| `PUT` | `/users/<id>` | Update username and/or email |
+| `POST` | `/users/bulk` | Bulk import from CSV (`multipart/form-data`, field `file`) |
+
+### URLs
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/urls` | Create a short URL `{user_id, original_url, title?}` |
+| `GET` | `/urls` | List all URLs (supports `?user_id=`) |
+| `GET` | `/urls/<id>` | Get URL by ID |
+| `PUT` | `/urls/<id>` | Update `title` and/or `is_active` |
+
+### Events / Analytics
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/events` | List all events (`created`, `updated`) |
+
+### Response formats
+
+All errors return JSON:
+```json
+{"error": "Not Found", "message": "User 99 not found"}
+```
+
+All datetimes are ISO 8601 strings: `"2025-09-19T22:25:05"`
+
+Cache header on `/products`: `X-Cache: HIT` or `X-Cache: MISS`
+
+---
+
+## Local Development (without Docker)
+
+**Prerequisites:** Python 3.13+, PostgreSQL, Redis, [uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+```bash
+uv sync                        # install dependencies
+cp .env.example .env           # set DATABASE_HOST=localhost
+uv run run.py                  # starts on port 8000
+```
+
+---
+
+## Running Tests
+
+```bash
+uv run pytest tests/ -v --cov=app --cov-report=term-missing
+```
+
+**49 tests, 92% coverage.** Tests use in-memory SQLite — no Postgres required.
+
+```
+tests/test_health.py     — health endpoint
+tests/test_errors.py     — 404/405 return JSON not HTML
+tests/test_products.py   — products route + Redis cache + chaos
+tests/test_users.py      — full user CRUD + bulk CSV
+tests/test_urls.py       — full URL CRUD + short code + events
+tests/test_events.py     — event listing and detail parsing
+```
+
+---
+
+## Load Testing
+
+```bash
+k6 run load_test.js
+```
+
+Ramps to 500 concurrent users over 90 seconds.
+
+**Results (10-core MacBook):**
+
+| Metric | Result | Target |
+|---|---|---|
+| Error rate | 1.22% | < 5% |
+| p95 latency | 251ms | < 500ms |
+| Throughput | 2,528 req/s | 100+ req/s |
+
+Outputs `load-summary.html` (HTML report) and `load-summary.json`.
+
+---
+
+## Observability
+
+Grafana dashboard auto-loads at http://localhost:3000 with 10 panels:
+
+- **Latency** — p50/p95/p99 time series + p95 gauge (red at >500ms)
+- **Traffic** — req/s by status code + total RPS
+- **Errors** — 5xx rate (red at >5%)
+- **Saturation** — Postgres connections vs max, Redis memory
+- **Cache** — Redis hit rate
+- **Uptime** — App status (UP/DOWN)
+
+**Alerts** fire to Discord on:
+- p95 latency > 500ms
+- 5xx error rate > 5%
+- Zero traffic for 2 minutes
+- Postgres connections > 80% of max
+- Redis memory > 80%
+- Flask app unreachable
+
+Set `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...` in `.env` to enable.
+
+---
 
 ## Project Structure
 
 ```
-mlh-pe-hackathon/
+ProdBreaker/
 ├── app/
-│   ├── __init__.py          # App factory (create_app)
-│   ├── database.py          # DatabaseProxy, BaseModel, connection hooks
+│   ├── __init__.py              # App factory, error handlers, metrics
+│   ├── cache.py                 # Redis helpers (cache_get, cache_set)
+│   ├── database.py              # PooledPostgresqlDatabase, BaseModel
 │   ├── models/
-│   │   └── __init__.py      # Import your models here
+│   │   ├── product.py           # Product model
+│   │   ├── user.py              # User model
+│   │   ├── url.py               # Url model (short codes)
+│   │   └── event.py             # Event model (analytics)
 │   └── routes/
-│       └── __init__.py      # register_routes() — add blueprints here
-├── .env.example             # DB connection template
-├── .gitignore               # Python + uv gitignore
-├── .python-version          # Pin Python version for uv
-├── pyproject.toml           # Project metadata + dependencies
-├── run.py                   # Entry point: uv run run.py
-└── README.md
+│       ├── products.py          # GET /products
+│       ├── users.py             # /users CRUD + bulk
+│       ├── urls.py              # /urls CRUD
+│       └── events.py            # GET /events
+├── monitoring/
+│   ├── prometheus/              # prometheus.yml + alerts.yml
+│   ├── alertmanager/            # alertmanager.yml (Discord routing)
+│   └── grafana/                 # Dashboard JSON + provisioning
+├── nginx/
+│   └── nginx.conf               # Reverse proxy + stub_status
+├── tests/                       # pytest suite (49 tests)
+├── Dockerfile                   # Multi-stage: builder + runtime
+├── docker-compose.yml           # Full stack: app + db + redis + nginx + monitoring
+├── load_test.js                 # k6 load test (500 VUs)
+├── load_csv.py                  # CSV seed data loader
+├── RUNBOOK.md                   # 3 AM emergency guide
+├── DECISION_LOG.md              # Why we chose each technology
+├── CAPACITY_PLAN.md             # How many users, what breaks first
+├── FAILURE_MODES.md             # What breaks + chaos reproduction
+└── PERFORMANCE_REPORT.md        # Load test results + bottleneck analysis
 ```
 
-## How to Add a Model
+---
 
-1. Create a file in `app/models/`, e.g. `app/models/product.py`:
+## Documentation
 
-```python
-from peewee import CharField, DecimalField, IntegerField
+| Document | Contents |
+|---|---|
+| [RUNBOOK.md](RUNBOOK.md) | Step-by-step alert response guides |
+| [DECISION_LOG.md](DECISION_LOG.md) | Why Gunicorn, Redis, Nginx, Postgres pool, etc. |
+| [CAPACITY_PLAN.md](CAPACITY_PLAN.md) | Load limits, scaling strategies, weakest links |
+| [FAILURE_MODES.md](FAILURE_MODES.md) | What breaks, observed responses, recovery steps |
+| [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | Benchmarks, bottleneck fixes, before/after numbers |
 
-from app.database import BaseModel
+---
 
+## Environment Variables
 
-class Product(BaseModel):
-    name = CharField()
-    category = CharField()
-    price = DecimalField(decimal_places=2)
-    stock = IntegerField()
-```
-
-2. Import it in `app/models/__init__.py`:
-
-```python
-from app.models.product import Product
-```
-
-3. Create the table (run once in a Python shell or a setup script):
-
-```python
-from app.database import db
-from app.models.product import Product
-
-db.create_tables([Product])
-```
-
-## How to Add Routes
-
-1. Create a blueprint in `app/routes/`, e.g. `app/routes/products.py`:
-
-```python
-from flask import Blueprint, jsonify
-from playhouse.shortcuts import model_to_dict
-
-from app.models.product import Product
-
-products_bp = Blueprint("products", __name__)
-
-
-@products_bp.route("/products")
-def list_products():
-    products = Product.select()
-    return jsonify([model_to_dict(p) for p in products])
-```
-
-2. Register it in `app/routes/__init__.py`:
-
-```python
-def register_routes(app):
-    from app.routes.products import products_bp
-    app.register_blueprint(products_bp)
-```
-
-## How to Load CSV Data
-
-```python
-import csv
-from peewee import chunked
-from app.database import db
-from app.models.product import Product
-
-def load_csv(filepath):
-    with open(filepath, newline="") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-
-    with db.atomic():
-        for batch in chunked(rows, 100):
-            Product.insert_many(batch).execute()
-```
-
-## Useful Peewee Patterns
-
-```python
-from peewee import fn
-from playhouse.shortcuts import model_to_dict
-
-# Select all
-products = Product.select()
-
-# Filter
-cheap = Product.select().where(Product.price < 10)
-
-# Get by ID
-p = Product.get_by_id(1)
-
-# Create
-Product.create(name="Widget", category="Tools", price=9.99, stock=50)
-
-# Convert to dict (great for JSON responses)
-model_to_dict(p)
-
-# Aggregations
-avg_price = Product.select(fn.AVG(Product.price)).scalar()
-total = Product.select(fn.SUM(Product.stock)).scalar()
-
-# Group by
-from peewee import fn
-query = (Product
-         .select(Product.category, fn.COUNT(Product.id).alias("count"))
-         .group_by(Product.category))
-```
-
-## Tips
-
-- Use `model_to_dict` from `playhouse.shortcuts` to convert model instances to dictionaries for JSON responses.
-- Wrap bulk inserts in `db.atomic()` for transactional safety and performance.
-- The template uses `teardown_appcontext` for connection cleanup, so connections are closed even when requests fail.
-- Check `.env.example` for all available configuration options.
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_NAME` | `hackathon_db` | Postgres database name |
+| `DATABASE_HOST` | `db` | Postgres host (`localhost` for local dev) |
+| `DATABASE_PORT` | `5432` | Postgres port |
+| `DATABASE_USER` | `postgres` | Postgres user |
+| `DATABASE_PASSWORD` | `postgres` | Postgres password |
+| `REDIS_HOST` | `localhost` | Redis host (`redis` in Docker) |
+| `REDIS_PORT` | `6379` | Redis port |
+| `GRAFANA_PASSWORD` | `admin` | Grafana admin password |
+| `DISCORD_WEBHOOK_URL` | — | Discord webhook for alerts |
+| `FLASK_DEBUG` | `true` | Enable Flask debug mode |

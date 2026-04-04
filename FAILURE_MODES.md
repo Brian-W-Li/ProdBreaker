@@ -4,6 +4,33 @@ Documents what breaks, what the app does, and how to recover.
 
 ---
 
+## Bottleneck Report
+
+**Before:** Flask's built-in dev server (`app.run()`) is single-threaded — it processes one request at a time. Under load, every request also hit PostgreSQL directly, serializing on both the server and the DB connection pool.
+
+**After:** Three changes eliminated the bottlenecks:
+1. **Gunicorn with 21 workers × 4 threads** replaces the dev server — 84 concurrent request handlers instead of 1.
+2. **Nginx** sits in front as a reverse proxy, accepting connections fast and queuing them to Gunicorn, preventing socket exhaustion under burst load.
+3. **Redis cache** on `GET /products` (60s TTL), `GET /users`, `GET /urls`, and `GET /events` (10s TTL) means the DB is hit minimally under load.
+
+**Evidence:** `X-Cache: HIT` / `X-Cache: MISS` headers on every `/products` response.
+
+---
+
+## Load Test
+
+Run with [k6](https://k6.io/docs/get-started/installation/) after `docker compose up --build`:
+
+```bash
+k6 run load_test.js
+# or target a different host:
+k6 run -e BASE_URL=http://localhost:8000 load_test.js
+```
+
+Ramps to 500 virtual users over 90 seconds. Thresholds: `<5% error rate`, `p95 < 500ms`.
+
+---
+
 ## 1. Database Unreachable at Startup
 
 **Cause:** PostgreSQL is down or credentials are wrong when the app starts.
@@ -58,18 +85,18 @@ curl http://localhost:8000/products  # → 200
 
 **Cause:** Unhandled exception, OOM, or manual `docker compose kill web`.
 
-**What happens:** Container exits. Docker restarts it automatically due to `restart: unless-stopped`.
+**What happens:** Container exits. Docker's `restart: unless-stopped` policy restarts it automatically on unintentional exits (OOM, process crash, daemon restart).
 
-**Observed:** Brief downtime (~1–2s) then the app is back.
+**Observed:** Brief downtime (~8s for Gunicorn to boot 21 workers) then the app is back.
 
 **To reproduce:**
 ```bash
-docker compose kill web
-# wait ~2 seconds
-curl http://localhost:8000/health  # → 200
+docker compose kill web           # kills container
+docker compose up web -d          # manually start (or let Docker restart on daemon restart)
+curl http://localhost:8000/health # → 200
 ```
 
-**Note:** `restart: unless-stopped` does NOT restart if you explicitly `docker compose stop` — only on crashes.
+**Note:** `docker compose kill` and `docker compose stop` are treated as intentional — Docker will NOT auto-restart in those cases. The policy fires on OOM kills, process crashes, and Docker daemon restarts.
 
 ---
 
