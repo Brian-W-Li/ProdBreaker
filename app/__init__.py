@@ -3,12 +3,14 @@ from flask import Flask, jsonify
 from prometheus_flask_exporter import PrometheusMetrics
 
 from app.database import init_db
+from app.logging_config import configure_logging
 from app.routes import register_routes
 
 
 def create_app():
     load_dotenv()
     app = Flask(__name__)
+    configure_logging(app)
     PrometheusMetrics(app)
 
     init_db(app)
