@@ -18,7 +18,16 @@ cp .env.example .env   # add DISCORD_WEBHOOK_URL if you want alerts
 # 3. Start everything
 docker compose up --build -d
 
-# 4. Verify
+# 4. Seed the database (users → urls → events, order matters for FK constraints)
+docker compose cp users.csv web:/app/users.csv
+docker compose cp urls.csv  web:/app/urls.csv
+docker compose cp events.csv web:/app/events.csv
+docker compose exec web python load_csv.py users.csv urls.csv events.csv
+# → Loaded 400 rows into User ...
+# → Loaded 2000 rows into Url ...
+# → Loaded 3422 rows into Event ...
+
+# 5. Verify
 curl http://localhost:${APP_PORT:-8000}/health
 # → {"status": "ok"}
 ```
@@ -96,7 +105,7 @@ uv run run.py                  # starts on APP_PORT (default 8000)
 uv run pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-**49 tests, 92% coverage.** Tests use in-memory SQLite — no Postgres required.
+**49 tests, 86% coverage.** Tests use in-memory SQLite — no Postgres or Redis required.
 
 ```
 tests/test_health.py     — health endpoint
@@ -115,7 +124,7 @@ tests/test_events.py     — event listing and detail parsing
 k6 run load_test.js
 ```
 
-Ramps to 500 concurrent users over 90 seconds.
+Ramps to 500 concurrent users over 90 seconds. Each run uses a unique timestamp prefix for generated usernames (via k6's `setup()` function), so re-running against a populated database does not produce 409 conflicts — **do not remove the `setup()` function** from `load_test.js`.
 
 **Results (10-core MacBook):**
 
@@ -126,6 +135,22 @@ Ramps to 500 concurrent users over 90 seconds.
 | Throughput | 2,528 req/s | 100+ req/s |
 
 Outputs `load-summary.html` (HTML report) and `load-summary.json`.
+
+---
+
+## Seeding the Database
+
+Three CSV files are included as seed data. They must be loaded **in this order** (FK constraint: urls reference users, events reference both):
+
+```bash
+docker compose exec web python load_csv.py users.csv urls.csv events.csv
+```
+
+`load_csv.py` auto-detects the model from the CSV headers, preserves explicit IDs, and resets PostgreSQL sequences after each bulk insert. Multiple files can be passed in one invocation.
+
+> **Important:** `DATABASE_HOST=db` in `.env` is the Docker-internal service name. Running `load_csv.py` directly from the host will fail with a DNS error — always run it via `docker compose exec web`.
+
+The `product` table requires no seed data. `/products` returns `[]` by design until product rows are inserted.
 
 ---
 
@@ -199,6 +224,25 @@ ProdBreaker/
 | [CAPACITY_PLAN.md](CAPACITY_PLAN.md) | Load limits, scaling strategies, weakest links |
 | [FAILURE_MODES.md](FAILURE_MODES.md) | What breaks, observed responses, recovery steps |
 | [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | Benchmarks, bottleneck fixes, before/after numbers |
+
+---
+
+## Troubleshooting
+
+**`/products` returns 503 "Database is unavailable"**
+The `product` table does not exist. This happens if the container image was built before `Product` was added to `db.create_tables()` in `app/__init__.py`. Rebuild: `docker compose up --build -d`.
+
+**`load_csv.py` fails with "could not translate host name db"**
+You are running the script from the host. `DATABASE_HOST=db` only resolves inside Docker. Use `docker compose exec web python load_csv.py ...` instead.
+
+**k6 `create user 201` failing at high rate (409 Conflict)**
+The database has users from a previous run and the `setup()` function was removed from `load_test.js`. Restore `setup()` — it generates a per-run `runId` that prefixes all generated usernames, preventing collisions across runs. Do not truncate the database to work around this.
+
+**pytest fails with `could not translate host name db`**
+`init_db()` is overwriting the test's SQLite database with a Postgres connection. Ensure `app/database.py` only calls `db.initialize()` (and registers request hooks) inside `if db.obj is None:`. The conftest sets `db` to SQLite before calling `create_app()`, so the guard prevents the overwrite.
+
+**pytest fails with `no such table: user`**
+The SQLite in-memory connection was closed between requests. Flask's `teardown_appcontext` hook calls `db.close()`, which destroys `:memory:`. The fix: request lifecycle hooks must be inside the `if db.obj is None:` guard so they are not registered in test mode. The conftest calls `db.connect()` once at session scope to keep the connection alive.
 
 ---
 

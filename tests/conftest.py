@@ -9,6 +9,7 @@ from app.database import db
 from app.models.user import User
 from app.models.url import Url
 from app.models.event import Event
+from app.models.product import Product
 
 load_dotenv()
 # Patch cache to no-ops for all tests — prevents cross-test pollution via real Redis
@@ -31,7 +32,8 @@ def pytest_unconfigure(config):
 def app():
     test_db = SqliteDatabase(':memory:')
     db.initialize(test_db)
-    app = create_app()
+    db.connect()  # keep connection open for the whole session so :memory: isn't destroyed
+    app = create_app()  # init_db is skipped; create_tables runs on the open connection
     app.config["TESTING"] = True
     return app
 
@@ -44,7 +46,6 @@ def db_client(app):
 @pytest.fixture(autouse=True)
 def clean_db(app):
     """Wipe tables before each test."""
-    db.create_tables([User, Url, Event], safe=True)
     with app.app_context():
         Event.delete().execute()
         Url.delete().execute()

@@ -6,6 +6,11 @@ import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
 
 const errorRate = new Rate("error_rate");
 
+export function setup() {
+  // Unique per-run prefix so __VU/__ITER combos don't collide across runs.
+  return { runId: Date.now() };
+}
+
 export const options = {
   stages: [
     { duration: "15s", target: 100 },
@@ -23,7 +28,7 @@ export const options = {
 const BASE = __ENV.BASE_URL || "http://localhost:8000";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-export default function () {
+export default function (data) {
   // Health
   const health = http.get(`${BASE}/health`);
   check(health, { "health 200": (r) => r.status === 200 });
@@ -38,7 +43,7 @@ export default function () {
   errorRate.add(products.status !== 200);
 
   // Create user
-  const username = `user_${__VU}_${__ITER}`;
+  const username = `user_${data.runId}_${__VU}_${__ITER}`;
   const createUser = http.post(
     `${BASE}/users`,
     JSON.stringify({ username, email: `${username}@test.com` }),
