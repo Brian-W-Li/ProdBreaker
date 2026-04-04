@@ -52,7 +52,7 @@ cp .env.example .env   # edit if your DB credentials differ
 uv run run.py
 
 # 6. Verify
-curl http://localhost:5000/health
+curl http://localhost:8000/health
 # → {"status":"ok"}
 ```
 
