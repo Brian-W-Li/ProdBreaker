@@ -1,0 +1,69 @@
+groups:
+  - name: prodbreaker
+    rules:
+
+      # Latency — p95 > 500ms for 1 minute
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum(rate(flask_http_request_duration_seconds_bucket[1m])) by (le)) > 0.5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency"
+          description: "p95 latency is {{ $value | humanizeDuration }} — above 500ms threshold."
+
+      # Errors — 5xx rate > 5% for 1 minute
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(flask_http_request_total{status=~"5.."}[1m]))
+          /
+          sum(rate(flask_http_request_total[1m])) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} — above 5% threshold."
+
+      # Traffic — requests per second drops to 0 (app down)
+      - alert: NoTraffic
+        expr: sum(rate(flask_http_request_total[2m])) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No incoming traffic"
+          description: "Zero requests in the last 2 minutes — app may be down."
+
+      # Saturation — Postgres connections > 80% of max
+      - alert: PostgresConnectionSaturation
+        expr: |
+          pg_stat_activity_count
+          /
+          pg_settings_max_connections > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Postgres connection pool near limit"
+          description: "Using {{ $value | humanizePercentage }} of max_connections."
+
+      # Saturation — Redis memory > 80%
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory high"
+          description: "Redis memory usage at {{ $value | humanizePercentage }}."
+
+      # App down — no metrics scraped
+      - alert: AppDown
+        expr: up{job="flask"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flask app is down"
+          description: "Prometheus cannot scrape the Flask app — it is unreachable."

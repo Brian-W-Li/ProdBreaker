@@ -13,9 +13,6 @@ build/
 # Environment variables
 .env
 
-# uv
-uv.lock
-
 # IDE
 .vscode/
 .idea/
@@ -32,3 +29,6 @@ Thumbs.db
 
 # Judging (not visible to participants)
 judging/
+.coverage
+load-summary.html
+load-summary.json
