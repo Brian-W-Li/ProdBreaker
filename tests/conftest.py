@@ -1,4 +1,5 @@
 import pytest
+from peewee import SqliteDatabase
 from dotenv import load_dotenv
 from app import create_app
 from app.database import db
@@ -11,6 +12,8 @@ load_dotenv()
 
 @pytest.fixture(scope="session")
 def app():
+    test_db = SqliteDatabase(':memory:')
+    db.initialize(test_db)
     app = create_app()
     app.config["TESTING"] = True
     return app
@@ -24,8 +27,8 @@ def client(app):
 @pytest.fixture(autouse=True)
 def clean_db(app):
     """Wipe tables before each test."""
+    db.create_tables([User, URL, Event], safe=True)
     with app.app_context():
-        db.create_tables([User, URL, Event], safe=True)
         Event.delete().execute()
         URL.delete().execute()
         User.delete().execute()
