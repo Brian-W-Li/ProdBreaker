@@ -48,7 +48,21 @@ def log_event_async(url_id, user_id, event_type, details):
     def _write():
         from app.models.event import Event
         try:
-            with db.connection_context():
+            # Use the existing connection if one is open (e.g. in tests); otherwise
+            # open a fresh connection from the pool for the background thread.
+            if db.is_closed():
+                ctx = db.connection_context()
+                ctx.__enter__()
+                try:
+                    Event.create(
+                        url_id=url_id,
+                        user_id=user_id,
+                        event_type=event_type,
+                        details=details,
+                    )
+                finally:
+                    ctx.__exit__(None, None, None)
+            else:
                 Event.create(
                     url_id=url_id,
                     user_id=user_id,
