@@ -66,6 +66,7 @@ curl http://localhost:${APP_PORT:-8000}/health
 | `GET` | `/users` | List all users (supports `?page=&per_page=`) |
 | `GET` | `/users/<id>` | Get user by ID |
 | `PUT` | `/users/<id>` | Update username and/or email |
+| `DELETE` | `/users/<id>` | Delete a user |
 | `POST` | `/users/bulk` | Bulk import from CSV (`multipart/form-data`, field `file`) |
 
 ### URLs
@@ -75,7 +76,8 @@ curl http://localhost:${APP_PORT:-8000}/health
 | `POST` | `/urls` | Create a short URL `{user_id, original_url, title?}` |
 | `GET` | `/urls` | List all URLs (supports `?user_id=`) |
 | `GET` | `/urls/<id>` | Get URL by ID |
-| `PUT` | `/urls/<id>` | Update `title` and/or `is_active` |
+| `PUT` | `/urls/<id>` | Update `title`, `is_active`, and/or `original_url` |
+| `DELETE` | `/urls/<id>` | Delete a URL |
 | `GET` | `/<short_code>` | Redirect to original URL (302); 410 if deactivated |
 
 ### Events / Analytics
@@ -252,6 +254,7 @@ ProdBreaker/
 | [DECISION_LOG.md](DECISION_LOG.md) | Why Gunicorn, Redis, Nginx, Postgres pool, etc. |
 | [CAPACITY_PLAN.md](CAPACITY_PLAN.md) | Load limits, scaling strategies, weakest links |
 | [FAILURE_MODES.md](FAILURE_MODES.md) | What breaks, observed responses, recovery steps |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System diagram, request flow, data model, caching strategy |
 | [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | Benchmarks, bottleneck fixes, before/after numbers |
 
 ---
