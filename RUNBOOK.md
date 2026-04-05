@@ -173,16 +173,168 @@ curl http://localhost:${APP_PORT:-8000}/metrics | grep flask_http
 
 ## Chaos Reproduction Commands
 
+> **Important:** Always use `docker compose kill` or `docker kill` — NOT `docker compose stop`.
+> `stop` sends SIGTERM (intentional stop) and `restart: unless-stopped` will NOT restart it.
+> `kill` sends SIGKILL (exit 137, treated as a crash) and the restart policy WILL kick in.
+
 ```bash
 # Kill DB — triggers HighErrorRate + 503s on /products
-docker compose stop db
+docker compose kill db
 
 # Kill Redis — /products hits DB directly, latency increases
-docker compose stop redis
+docker compose kill redis
 
-# Kill web — triggers AppDown alert after 30s
-docker compose stop web
+# Kill web — Docker restarts it automatically via restart: unless-stopped
+docker compose kill web
 
 # Flood connections — triggers PostgresConnectionSaturation
 k6 run load_test.js
 ```
+
+---
+
+## Chaos Engineering — Multi-Instance Resilience
+
+The `web` service runs **3 replicas** (via `--scale web=3`) behind nginx. Killing one replica causes zero visible downtime — nginx retries on a healthy replica and Docker restarts the dead container automatically.
+
+### Setup (Swarm)
+
+```bash
+# One-time: clean slate
+docker compose down --remove-orphans
+docker swarm leave --force 2>/dev/null; true
+
+# Init swarm and build image
+docker swarm init
+docker build -t prodbreaker-web .
+
+# Deploy the stack
+docker stack deploy -c docker-stack.yml prodbreaker
+
+# Wait for all services to come up (~20s)
+while true; do clear; docker service ls; sleep 3; done
+
+# Confirm all 3 web replicas are running (look for 3/3)
+docker service ls
+docker service ps prodbreaker_web
+```
+
+### What to watch in Grafana
+
+Open the **bottom row** of the dashboard:
+
+| Panel | What you see during chaos |
+|---|---|
+| **Instances — Healthy Count** | Drops from 3 → 2 when you kill a replica, recovers to 3 once Docker restarts it |
+| **Instances — Per-Instance Up/Down** | The killed instance line drops to 0, then returns to 1 on restart |
+| **Instances — Per-Instance RPS** | Traffic redistributes across remaining replicas during the outage |
+| **Errors — 5xx Rate** | Should stay at 0% — nginx reroutes requests away from the dead replica |
+| **Latency — p95** | May blip slightly during the kill but should not breach 500ms |
+
+### Running the test
+
+**Terminal 1 — keep load running:**
+```bash
+k6 run load_test.js
+```
+
+**Terminal 2 — kill replicas (Swarm replaces them automatically):**
+```bash
+# Get running container IDs for web
+docker ps --filter name=prodbreaker_web --format "table {{.ID}}\t{{.Names}}"
+
+# Kill one — Swarm detects missing replica and schedules a replacement immediately
+docker kill <container-id>
+
+# Kill two at once
+docker kill <container-id-1> <container-id-2>
+
+# Watch Swarm replace them
+docker service ps prodbreaker_web
+```
+
+**Terminal 3 — watch Swarm reconcile (Mac-compatible):**
+```bash
+while true; do clear; docker service ps prodbreaker_web; echo ""; date; sleep 2; done
+```
+
+**What success looks like:**
+- Killed task shows `Shutdown` / `Failed`
+- New task immediately appears as `Preparing` → `Running`
+- Swarm always maintains exactly 3 running replicas
+- `docker service logs prodbreaker_web` shows Gunicorn booting on the new task
+
+**What Swarm does:** The reconciliation loop runs continuously. When a task (container) dies, Swarm immediately schedules a replacement — it doesn't wait for a restart, it spins up a brand new task. The desired state (3 replicas) is always enforced. This is true self-healing.
+
+**What nginx does:** `proxy_next_upstream error timeout http_502 http_503 http_504` transparently retries requests on healthy replicas while the replacement starts. The healthcheck `start_period: 10s` ensures the new task is ready before nginx routes to it.
+
+### Scale on the fly
+
+```bash
+# Scale to 5 replicas mid-test — Swarm adds 2 more immediately
+docker service scale prodbreaker_web=5
+
+# Scale back to 3
+docker service scale prodbreaker_web=3
+```
+
+### Verify no errors during kill
+
+```bash
+# Continuous health check
+while true; do curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" http://localhost:${APP_PORT:-8000}/health; sleep 0.2; done
+
+# Check error rate via Prometheus
+curl -s 'http://localhost:9090/api/v1/query?query=sum(rate(flask_http_request_total{status=~"5.."}[1m]))' | jq '.data.result'
+```
+
+### Full reset between tests
+
+```bash
+docker stack rm prodbreaker
+sleep 10
+docker build -t prodbreaker-web .
+docker stack deploy -c docker-stack.yml prodbreaker
+while true; do clear; docker service ls; sleep 3; done
+```
+
+### Troubleshooting
+
+**web stuck at 0/3 — healthcheck failing (no curl in image):**
+```bash
+# Check what's failing
+docker service ps prodbreaker_web --no-trunc
+docker ps -a --filter name=prodbreaker_web --format "{{.ID}}" | head -1 | xargs docker logs
+
+# Fix: ensure Dockerfile uses python:3.13 (not slim), rebuild
+docker build -t prodbreaker-web .
+docker service update --force prodbreaker_web
+```
+
+**web keeps restarting in a loop:**
+```bash
+# Check logs from a recent task
+docker ps -a --filter name=prodbreaker_web --format "{{.ID}}" | head -3 | xargs -I{} docker logs {}
+```
+
+**nginx stuck at 0/1:**
+```bash
+docker service ps prodbreaker_nginx --no-trunc
+# Usually means web isn't healthy yet — wait for web to show 3/3 first
+```
+
+**Leave swarm and go back to plain Compose:**
+```bash
+docker stack rm prodbreaker
+docker swarm leave --force
+docker compose up -d --scale web=3
+```
+
+### Expected outcomes
+
+| Scenario | Result |
+|---|---|
+| Kill 1 of 3 replicas | Swarm schedules replacement in <2s, 2 replicas serve traffic meanwhile, no errors |
+| Kill 2 of 3 replicas | 1 replica serves all traffic, Swarm brings up 2 replacements, no errors |
+| Kill all 3 simultaneously | Brief outage (~10s for healthcheck start_period), all 3 replaced automatically |
+| `docker service scale prodbreaker_web=0` | All replicas removed — scale back to restore, demonstrates desired-state enforcement |

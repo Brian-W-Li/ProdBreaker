@@ -1,5 +1,5 @@
 # Stage 1: build dependencies
-FROM python:3.13-slim AS builder
+FROM python:3.13 AS builder
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # Stage 2: runtime
-FROM python:3.13-slim
+FROM python:3.13
 
 WORKDIR /app
 
@@ -22,4 +22,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 EXPOSE 8000
 
-CMD ["gunicorn", "run:app", "--workers=21", "--threads=4", "--worker-class=gthread", "--bind=0.0.0.0:8000", "--timeout=30", "--backlog=2048", "--keep-alive=5"]
+CMD ["gunicorn", "run:app", "--workers=4", "--threads=25", "--worker-class=gthread", "--bind=0.0.0.0:8000", "--timeout=60", "--backlog=512", "--keep-alive=5"]

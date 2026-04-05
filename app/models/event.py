@@ -8,8 +8,8 @@ from app.models.user import User
 
 
 class Event(BaseModel):
-    url = ForeignKeyField(Url, backref='events', on_delete='CASCADE')
-    user = ForeignKeyField(User, backref='events', on_delete='CASCADE')
-    event_type = CharField()  # 'created', 'updated', 'deleted', 'redirected'
-    timestamp = DateTimeField(default=datetime.utcnow)
+    url = ForeignKeyField(Url, backref='events', on_delete='CASCADE', index=True)
+    user = ForeignKeyField(User, backref='events', on_delete='CASCADE', index=True)
+    event_type = CharField()
+    timestamp = DateTimeField(default=datetime.utcnow, index=True)
     details = TextField(default='{}')  # JSON string

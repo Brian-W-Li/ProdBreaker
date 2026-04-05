@@ -24,6 +24,10 @@ def create_app():
     with app.app_context():
         from app.database import db
         db.create_tables([User, Url, Event, Product], safe=True)
+        db.execute_sql("CREATE INDEX IF NOT EXISTS idx_url_user_id ON url (user_id)")
+        db.execute_sql("CREATE INDEX IF NOT EXISTS idx_event_url_id ON event (url_id)")
+        db.execute_sql("CREATE INDEX IF NOT EXISTS idx_event_user_id ON event (user_id)")
+        db.execute_sql("CREATE INDEX IF NOT EXISTS idx_event_timestamp ON event (timestamp DESC)")
 
     register_routes(app)
 
