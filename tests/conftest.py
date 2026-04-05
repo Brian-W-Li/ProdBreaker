@@ -1,4 +1,5 @@
 import io
+from concurrent.futures import Future
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,10 +13,23 @@ from app.models.event import Event
 from app.models.product import Product
 
 load_dotenv()
-# Patch cache to no-ops for all tests — prevents cross-test pollution via real Redis
+
+
+def _sync_submit(fn, *args, **kwargs):
+    """Run fn synchronously and return a completed Future (for test isolation)."""
+    f = Future()
+    try:
+        f.set_result(fn(*args, **kwargs))
+    except Exception as e:
+        f.set_exception(e)
+    return f
+
+
+# Patch cache to no-ops and executor to synchronous for all tests
 _cache_patches = [
     patch("app.cache.cache_get", return_value=None),
     patch("app.cache.cache_set", return_value=None),
+    patch("app.database._event_executor.submit", side_effect=_sync_submit),
 ]
 
 
