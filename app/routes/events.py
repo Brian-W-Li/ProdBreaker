@@ -38,6 +38,7 @@ def list_events():
         return jsonify(error="Bad Request", message="page and per_page must be integers"), 400
 
     url_id = request.args.get("url_id")
+    user_id = request.args.get("user_id")
     event_type = request.args.get("event_type")
 
     if url_id is not None:
@@ -46,7 +47,13 @@ def list_events():
         except (ValueError, TypeError):
             return jsonify(error="Bad Request", message="url_id must be an integer"), 400
 
-    cache_key = f"events:uid{url_id}:type{event_type}:p{page}:pp{per_page}"
+    if user_id is not None:
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            return jsonify(error="Bad Request", message="user_id must be an integer"), 400
+
+    cache_key = f"events:uid{url_id}:userid{user_id}:type{event_type}:p{page}:pp{per_page}"
     cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached), 200
@@ -54,6 +61,8 @@ def list_events():
     query = Event.select()
     if url_id is not None:
         query = query.where(Event.url_id == url_id)
+    if user_id is not None:
+        query = query.where(Event.user_id == user_id)
     if event_type is not None:
         query = query.where(Event.event_type == event_type)
 
@@ -95,3 +104,20 @@ def create_event():
         )
 
     return jsonify(_event_dict(event)), 201
+
+
+@events_bp.route("/<int:event_id>", methods=["GET"])
+def get_event(event_id):
+    cache_key = f"event:{event_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
+
+    try:
+        event = Event.get_by_id(event_id)
+    except Event.DoesNotExist:
+        return jsonify(error="Not Found", message=f"Event {event_id} not found"), 404
+
+    data = _event_dict(event)
+    cache_set(cache_key, data, ttl=CACHE_TTL)
+    return jsonify(data), 200
