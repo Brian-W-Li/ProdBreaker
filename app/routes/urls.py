@@ -131,10 +131,13 @@ def update_url(url_id):
     if "is_active" in data:
         url.is_active = data["is_active"]
 
+    if "original_url" in data:
+        url.original_url = data["original_url"]
+
     url.updated_at = datetime.utcnow()
 
     with db.atomic():
-        url.save(only=[Url.title, Url.is_active, Url.updated_at])
+        url.save(only=[Url.title, Url.is_active, Url.original_url, Url.updated_at])
     log_event_async(url.id, url.user_id, 'updated',
                     json.dumps({"short_code": url.short_code, "original_url": url.original_url}))
 
@@ -142,6 +145,20 @@ def update_url(url_id):
     cache_set(f"url:{url_id}", result, ttl=30)
     bump_generation(GEN_URLS)
     return jsonify(result), 200
+
+
+@urls_bp.route("/<int:url_id>", methods=["DELETE"])
+def delete_url(url_id):
+    try:
+        url = Url.get_by_id(url_id)
+    except Url.DoesNotExist:
+        return jsonify(error="Not Found", message=f"URL {url_id} not found"), 404
+
+    with db.atomic():
+        url.delete_instance()
+
+    bump_generation(GEN_URLS)
+    return "", 204
 
 
 @redirect_bp.route("/<short_code>")

@@ -147,6 +147,20 @@ def update_user(user_id):
     return jsonify(data), 200
 
 
+@users_bp.route("/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    try:
+        user = User.get_by_id(user_id)
+    except User.DoesNotExist:
+        return jsonify(error="Not Found", message=f"User {user_id} not found"), 404
+
+    with db.atomic():
+        user.delete_instance()
+
+    bump_generation(GEN_USERS)
+    return "", 204
+
+
 @users_bp.route("/<int:user_id>/urls", methods=["GET"])
 def user_urls(user_id):
     # Deferred import to avoid circular dependency (app.models.url imports User)
