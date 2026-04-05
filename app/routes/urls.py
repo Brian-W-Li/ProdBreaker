@@ -7,9 +7,8 @@ from datetime import datetime
 from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
-from app.cache import cache_get, cache_set
-from app.database import db
-from app.models.event import Event
+from app.cache import cache_get, cache_set, bump_generation, GEN_URLS, parse_pagination
+from app.database import db, log_event_async
 from app.models.url import Url
 from app.models.user import User
 
@@ -50,7 +49,6 @@ def create_url():
     except User.DoesNotExist:
         return jsonify(error="Not Found", message=f"User {user_id} not found"), 404
 
-    # Attempt INSERT with random short_code, retry only on collision (extremely rare)
     url = None
     for _ in range(10):
         try:
@@ -62,12 +60,8 @@ def create_url():
                     original_url=original_url,
                     title=title,
                 )
-                Event.create(
-                    url=url,
-                    user=user,
-                    event_type='created',
-                    details=json.dumps({"short_code": short_code, "original_url": original_url}),
-                )
+            log_event_async(url.id, user.id, 'created',
+                            json.dumps({"short_code": short_code, "original_url": original_url}))
             break
         except IntegrityError:
             continue
@@ -75,6 +69,7 @@ def create_url():
     if url is None:
         return jsonify(error="Internal Server Error", message="Could not generate unique short code"), 500
 
+    bump_generation(GEN_URLS)
     return jsonify(_url_dict(url)), 201
 
 
@@ -82,8 +77,7 @@ def create_url():
 def list_urls():
     user_id = request.args.get("user_id")
     try:
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 20))
+        page, per_page = parse_pagination(request.args)
     except (ValueError, TypeError):
         return jsonify(error="Bad Request", message="page and per_page must be integers"), 400
 
@@ -103,17 +97,23 @@ def list_urls():
     offset = (page - 1) * per_page
     urls = query.order_by(Url.id).offset(offset).limit(per_page)
     data = [_url_dict(u) for u in urls]
-    cache_set(cache_key, data, ttl=10)
+    cache_set(cache_key, data, ttl=2)
     return jsonify(data), 200
 
 
 @urls_bp.route("/<int:url_id>", methods=["GET"])
 def get_url(url_id):
+    cache_key = f"url:{url_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
     try:
         url = Url.get_by_id(url_id)
     except Url.DoesNotExist:
         return jsonify(error="Not Found", message=f"URL {url_id} not found"), 404
-    return jsonify(_url_dict(url)), 200
+    data = _url_dict(url)
+    cache_set(cache_key, data, ttl=30)
+    return jsonify(data), 200
 
 
 @urls_bp.route("/<int:url_id>", methods=["PUT"])
@@ -134,15 +134,14 @@ def update_url(url_id):
     url.updated_at = datetime.utcnow()
 
     with db.atomic():
-        url.save()
-        Event.create(
-            url=url,
-            user_id=url.user_id,
-            event_type='updated',
-            details=json.dumps({"short_code": url.short_code, "original_url": url.original_url}),
-        )
+        url.save(only=[Url.title, Url.is_active, Url.updated_at])
+    log_event_async(url.id, url.user_id, 'updated',
+                    json.dumps({"short_code": url.short_code, "original_url": url.original_url}))
 
-    return jsonify(_url_dict(url)), 200
+    result = _url_dict(url)
+    cache_set(f"url:{url_id}", result, ttl=30)
+    bump_generation(GEN_URLS)
+    return jsonify(result), 200
 
 
 @redirect_bp.route("/<short_code>")
@@ -155,12 +154,6 @@ def redirect_url(short_code):
     if not url.is_active:
         return jsonify(error="Gone", message="This shortened URL has been deactivated"), 410
 
-    with db.atomic():
-        Event.create(
-            url=url,
-            user_id=url.user_id,
-            event_type='clicked',
-            details=json.dumps({"short_code": short_code, "original_url": url.original_url}),
-        )
-
+    log_event_async(url.id, url.user_id, 'clicked',
+                    json.dumps({"short_code": short_code, "original_url": url.original_url}))
     return redirect(url.original_url, code=302)

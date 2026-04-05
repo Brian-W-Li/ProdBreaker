@@ -1,0 +1,206 @@
+version: "3.9"
+
+# Docker Swarm stack — use with:
+#   docker swarm init
+#   docker build -t prodbreaker-web .
+#   docker stack deploy -c docker-stack.yml prodbreaker
+#
+# Chaos test:
+#   docker service scale prodbreaker_web=3
+#   docker kill <container-id>   # Swarm replaces it automatically
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE_NAME:-hackathon_db}
+    command: postgres -c max_connections=400 -c shared_buffers=256MB -c work_mem=4MB
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --tcp-backlog 511
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  web:
+    # Build first: docker build -t prodbreaker-web .
+    image: prodbreaker-web
+    environment:
+      DATABASE_NAME: ${DATABASE_NAME:-hackathon_db}
+      DATABASE_HOST: db
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LOG_FILE: /app/logs/app.log
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: any
+        delay: 2s
+        window: 30s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "${APP_PORT:-8000}:80"
+    configs:
+      - source: nginx_conf
+        target: /etc/nginx/nginx.conf
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.3
+    command: --nginx.scrape-uri=http://nginx/stub_status
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@db:5432/${DATABASE_NAME:-hackathon_db}?sslmode=disable"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    environment:
+      REDIS_ADDR: redis:6379
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    configs:
+      - source: prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+      - source: alerts_yml
+        target: /etc/prometheus/alerts.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - prometheus_data:/prometheus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    configs:
+      - source: alertmanager_yml
+        target: /etc/alertmanager/alertmanager.yml
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  discord-alerts:
+    image: rogerrum/alertmanager-discord:latest
+    environment:
+      DISCORD_WEBHOOK: ${DISCORD_WEBHOOK_URL:-}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/prodbreaker.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+      - source: grafana_dashboard_provisioning
+        target: /etc/grafana/provisioning/dashboards/dashboards.yml
+      - source: grafana_dashboard_json
+        target: /var/lib/grafana/dashboards/prodbreaker.json
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+configs:
+  nginx_conf:
+    file: ./nginx/nginx.conf
+  prometheus_yml:
+    file: ./monitoring/prometheus/prometheus.yml
+  alerts_yml:
+    file: ./monitoring/prometheus/alerts.yml
+  alertmanager_yml:
+    file: ./monitoring/alertmanager/alertmanager.yml
+  grafana_datasource:
+    file: ./monitoring/grafana/provisioning/datasources/prometheus.yml
+  grafana_dashboard_provisioning:
+    file: ./monitoring/grafana/provisioning/dashboards/dashboards.yml
+  grafana_dashboard_json:
+    file: ./monitoring/grafana/dashboards/prodbreaker.json
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  app_logs:

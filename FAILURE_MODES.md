@@ -9,9 +9,9 @@ Documents what breaks, what the app does, and how to recover.
 **Before:** Flask's built-in dev server (`app.run()`) is single-threaded — it processes one request at a time. Under load, every request also hit PostgreSQL directly, serializing on both the server and the DB connection pool.
 
 **After:** Three changes eliminated the bottlenecks:
-1. **Gunicorn with 21 workers × 4 threads** replaces the dev server — 84 concurrent request handlers instead of 1.
+1. **Gunicorn with 4 workers × 25 threads** (`gthread`) replaces the dev server — 100 concurrent request handlers instead of 1.
 2. **Nginx** sits in front as a reverse proxy, accepting connections fast and queuing them to Gunicorn, preventing socket exhaustion under burst load.
-3. **Redis cache** on `GET /products` (60s TTL), `GET /users`, `GET /urls`, and `GET /events` (10s TTL) means the DB is hit minimally under load.
+3. **Redis cache** on `GET /products` (60s TTL), `GET /users`, `GET /urls`, and `GET /events` (2s TTL) means the DB is hit minimally under load.
 
 **Evidence:** `X-Cache: HIT` / `X-Cache: MISS` headers on every `/products` response.
 
@@ -83,20 +83,31 @@ curl http://localhost:${APP_PORT:-8000}/products  # → 200
 
 ## 3. Web Container Crashes
 
-**Cause:** Unhandled exception, OOM, or manual `docker compose kill web`.
+**Cause:** Unhandled exception, OOM, or manual `docker kill <container-id>`.
 
-**What happens:** Container exits. Docker's `restart: unless-stopped` policy restarts it automatically on unintentional exits (OOM, process crash, daemon restart).
+**What happens (plain Compose):** Container exits. Docker's `restart: unless-stopped` policy restarts it automatically on crashes (exit code != 0). Brief downtime (~3–5s for Gunicorn to boot) then the app is back.
 
-**Observed:** Brief downtime (~8s for Gunicorn to boot 21 workers) then the app is back.
+**What happens (Docker Swarm):** Swarm's reconciliation loop immediately schedules a replacement task. The dead replica is replaced within 2s; nginx's `proxy_next_upstream` retries requests on the remaining healthy replicas during the brief window. Zero visible errors under load.
 
-**To reproduce:**
+**To reproduce (Swarm — recommended):**
 ```bash
-docker compose kill web           # kills container
-docker compose up web -d          # manually start (or let Docker restart on daemon restart)
-curl http://localhost:${APP_PORT:-8000}/health # → 200
+# Get a running web container ID
+docker ps --filter name=prodbreaker_web --format "{{.ID}}" | head -1
+
+# Kill it — Swarm replaces it automatically, no manual action needed
+docker kill <container-id>
+
+# Watch Swarm reconcile
+docker service ps prodbreaker_web
 ```
 
-**Note:** `docker compose kill` and `docker compose stop` are treated as intentional — Docker will NOT auto-restart in those cases. The policy fires on OOM kills, process crashes, and Docker daemon restarts.
+**To reproduce (plain Compose):**
+```bash
+docker kill prodbreaker-web-1     # SIGKILL → exit 137 → restart: unless-stopped fires
+curl http://localhost:${APP_PORT:-8000}/health  # → 200 once restarted
+```
+
+**Important:** Always use `docker kill` (SIGKILL), NOT `docker stop` or `docker compose stop` (SIGTERM). `stop` is treated as intentional — the restart policy will NOT fire. Only crash-like exits (non-zero exit code) trigger auto-restart.
 
 ---
 

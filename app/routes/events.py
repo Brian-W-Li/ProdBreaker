@@ -2,7 +2,7 @@ import json
 
 from flask import Blueprint, jsonify, request
 
-from app.cache import cache_get, cache_set
+from app.cache import cache_get, cache_set, parse_pagination
 from app.models.event import Event
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")
@@ -30,8 +30,7 @@ def _event_dict(event):
 @events_bp.route("", methods=["GET"])
 def list_events():
     try:
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 20))
+        page, per_page = parse_pagination(request.args)
     except (ValueError, TypeError):
         return jsonify(error="Bad Request", message="page and per_page must be integers"), 400
 

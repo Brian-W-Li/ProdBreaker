@@ -6,7 +6,7 @@ from app.models.product import Product
 
 
 class Url(BaseModel):
-    user = ForeignKeyField(User, backref="urls")
+    user = ForeignKeyField(User, backref="urls", index=True)
     short_code = CharField(unique=True)
     original_url = CharField()
     title = CharField(null=True)

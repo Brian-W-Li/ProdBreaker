@@ -2,7 +2,7 @@
 
 A production-grade URL shortener built on Flask · Peewee · PostgreSQL · Redis · Nginx · Gunicorn, with full observability (Prometheus + Grafana), load testing (k6), and chaos engineering.
 
-**Stack:** Flask · Peewee ORM · PostgreSQL 16 · Redis 7 · Gunicorn · Nginx · Prometheus · Grafana · Docker Compose · uv
+**Stack:** Flask · Peewee ORM · PostgreSQL 16 · Redis 7 · Gunicorn · Nginx · Prometheus · Grafana · Docker Compose · Docker Swarm · uv
 
 ---
 
@@ -152,13 +152,13 @@ k6 run load_test.js
 
 Ramps to 500 concurrent users over 90 seconds. Each run uses a unique timestamp prefix for generated usernames (via k6's `setup()` function), so re-running against a populated database does not produce 409 conflicts — **do not remove the `setup()` function** from `load_test.js`.
 
-**Results (10-core MacBook):**
+**Results (10-core MacBook, 3 web replicas):**
 
 | Metric | Result | Target |
 |---|---|---|
-| Error rate | 1.22% | < 5% |
-| p95 latency | 251ms | < 500ms |
-| Throughput | 2,528 req/s | 100+ req/s |
+| Error rate | 0.00% | < 5% |
+| p95 latency | ~470ms | < 500ms |
+| Throughput | ~700 req/s | 100+ req/s |
 
 Outputs `load-summary.html` (HTML report) and `load-summary.json`.
 
@@ -230,8 +230,9 @@ ProdBreaker/
 ├── nginx/
 │   └── nginx.conf               # Reverse proxy + stub_status
 ├── tests/                       # pytest suite (49 tests)
-├── Dockerfile                   # Multi-stage: builder + runtime
-├── docker-compose.yml           # Full stack: app + db + redis + nginx + monitoring
+├── Dockerfile                   # Multi-stage: builder + runtime (python:3.13)
+├── docker-compose.yml           # Local dev: app + db + redis + nginx + monitoring
+├── docker-stack.yml             # Docker Swarm: 3 web replicas, self-healing chaos demo
 ├── load_test.js                 # k6 load test (500 VUs)
 ├── load_csv.py                  # CSV seed data loader
 ├── RUNBOOK.md                   # 3 AM emergency guide

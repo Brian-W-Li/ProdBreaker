@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 from peewee import IntegrityError
 
-from app.cache import cache_get, cache_set
+from app.cache import cache_get, cache_set, bump_generation, GEN_USERS, GEN_URLS, get_generations, parse_pagination
 from app.database import db
 from app.models.user import User
 
@@ -66,8 +66,7 @@ def bulk_import():
 @users_bp.route("", methods=["GET"])
 def list_users():
     try:
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 20))
+        page, per_page = parse_pagination(request.args)
     except (ValueError, TypeError):
         return jsonify(error="Bad Request", message="page and per_page must be integers"), 400
 
@@ -79,17 +78,23 @@ def list_users():
     offset = (page - 1) * per_page
     users = User.select().order_by(User.id).offset(offset).limit(per_page)
     data = [_user_dict(u) for u in users]
-    cache_set(cache_key, data, ttl=10)
+    cache_set(cache_key, data, ttl=2)
     return jsonify(data), 200
 
 
 @users_bp.route("/<int:user_id>", methods=["GET"])
 def get_user(user_id):
+    cache_key = f"user:{user_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
     try:
         user = User.get_by_id(user_id)
     except User.DoesNotExist:
         return jsonify(error="Not Found", message=f"User {user_id} not found"), 404
-    return jsonify(_user_dict(user)), 200
+    data = _user_dict(user)
+    cache_set(cache_key, data, ttl=30)
+    return jsonify(data), 200
 
 
 @users_bp.route("", methods=["POST"])
@@ -107,6 +112,7 @@ def create_user():
     except IntegrityError:
         return jsonify(error="Conflict", message="username or email already exists"), 409
 
+    bump_generation(GEN_USERS)
     return jsonify(_user_dict(user)), 201
 
 
@@ -131,24 +137,44 @@ def update_user(user_id):
 
     try:
         with db.atomic():
-            user.save()
+            user.save(only=[User.username, User.email])
     except IntegrityError:
         return jsonify(error="Conflict", message="username or email already exists"), 409
 
-    return jsonify(_user_dict(user)), 200
+    data = _user_dict(user)
+    cache_set(f"user:{user_id}", data, ttl=30)
+    bump_generation(GEN_USERS)
+    return jsonify(data), 200
+
 
 @users_bp.route("/<int:user_id>/urls", methods=["GET"])
 def user_urls(user_id):
+    # Deferred import to avoid circular dependency (app.models.url imports User)
     from app.models.url import Url
     try:
-        user = User.get_by_id(user_id)
-        urls = Url.select().where(Url.user == user)
-        return jsonify([{
-            "short_code": u.short_code,
-            "original_url": u.original_url,
-            "title": u.title,
-            "is_active": u.is_active,
-            "created_at": str(u.created_at)
-        } for u in urls]), 200
+        page, per_page = parse_pagination(request.args)
+    except (ValueError, TypeError):
+        return jsonify(error="Bad Request", message="page and per_page must be integers"), 400
+
+    gen_users, gen_urls = get_generations(GEN_USERS, GEN_URLS)
+    cache_key = f"user_urls:{user_id}:g{gen_users}-{gen_urls}:p{page}:pp{per_page}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
+
+    try:
+        User.get_by_id(user_id)
     except User.DoesNotExist:
         return jsonify(error="Not Found", message="User not found"), 404
+
+    offset = (page - 1) * per_page
+    urls = Url.select().where(Url.user_id == user_id).order_by(Url.id).offset(offset).limit(per_page)
+    data = [{
+        "short_code": u.short_code,
+        "original_url": u.original_url,
+        "title": u.title,
+        "is_active": u.is_active,
+        "created_at": str(u.created_at)
+    } for u in urls]
+    cache_set(cache_key, data, ttl=10)
+    return jsonify(data), 200
