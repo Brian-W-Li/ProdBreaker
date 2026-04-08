@@ -22,9 +22,9 @@ Documents what breaks, what the app does, and how to recover.
 Run with [k6](https://k6.io/docs/get-started/installation/) after `docker compose up --build`:
 
 ```bash
-k6 run load_test.js
+k6 run load_test/load_test.js
 # or target a different host:
-k6 run -e BASE_URL=http://localhost:${APP_PORT:-8000} load_test.js
+k6 run -e BASE_URL=http://localhost:${APP_PORT:-8000} load_test/load_test.js
 ```
 
 Ramps to 500 virtual users over 90 seconds. Thresholds: `<5% error rate`, `p95 < 500ms`.
@@ -165,7 +165,7 @@ HTTP 500. Stack trace never reaches the client.
 
 **Cause:** `products.csv` or other seeding files contain non-numeric data in numeric columns (e.g., "Price: 10" instead of "10").
 
-**What happens:** The `load_csv.py` script uses explicit type casting (`int()`, `float()`) wrapped in `try-except` blocks. 
+**What happens:** The `seed/load_csv.py` script uses explicit type casting (`int()`, `float()`) wrapped in `try-except` blocks. 
 
 **Observed behavior:**
 - **Robustness:** The script does NOT crash or stop execution.
@@ -174,5 +174,5 @@ HTTP 500. Stack trace never reaches the client.
 
 **To reproduce:**
 1. Manually edit `products.csv` to include a string in the `price` column.
-2. Run `uv run load_csv.py products.csv`.
+2. Run `uv run seed/load_csv.py products.csv`.
 3. Observe the log output showing the skipped row while other products are successfully loaded.

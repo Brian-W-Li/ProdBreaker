@@ -6,7 +6,7 @@ How many users can ProdBreaker handle? Where is the ceiling, and what breaks fir
 
 ## Measured Baseline (Load Test Results)
 
-All numbers from `k6 run load_test.js` on a 10-core MacBook with Docker Desktop.
+All numbers from `k6 run load_test/load_test.js` on a 10-core MacBook with Docker Desktop.
 
 | Metric | Value |
 |---|---|

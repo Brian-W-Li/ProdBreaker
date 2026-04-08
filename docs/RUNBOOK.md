@@ -163,7 +163,7 @@ docker compose logs -f
 docker compose ps
 
 # Run load test
-k6 run load_test.js
+k6 run load_test/load_test.js
 
 # Check metrics endpoint
 curl http://localhost:${APP_PORT:-8000}/metrics | grep flask_http
@@ -188,7 +188,7 @@ docker compose kill redis
 docker compose kill web
 
 # Flood connections — triggers PostgresConnectionSaturation
-k6 run load_test.js
+k6 run load_test/load_test.js
 ```
 
 ---
@@ -235,7 +235,7 @@ Open the **bottom row** of the dashboard:
 
 **Terminal 1 — keep load running:**
 ```bash
-k6 run load_test.js
+k6 run load_test/load_test.js
 ```
 
 **Terminal 2 — kill replicas (Swarm replaces them automatically):**

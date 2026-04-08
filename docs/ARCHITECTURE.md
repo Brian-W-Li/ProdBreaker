@@ -147,7 +147,7 @@ on remaining healthy replicas during transition
 Zero client-visible errors under load
 ```
 
-See [RUNBOOK.md](RUNBOOK.md) for step-by-step chaos reproduction commands.
+See [RUNBOOK.md](docs/RUNBOOK.md) for step-by-step chaos reproduction commands.
 
 ---
 

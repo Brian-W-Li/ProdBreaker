@@ -19,10 +19,10 @@ cp .env.example .env   # add DISCORD_WEBHOOK_URL if you want alerts
 docker compose up --build -d
 
 # 4. Seed the database (users → urls → events, order matters for FK constraints)
-docker compose cp users.csv web:/app/users.csv
-docker compose cp urls.csv  web:/app/urls.csv
-docker compose cp events.csv web:/app/events.csv
-docker compose exec web python load_csv.py users.csv urls.csv events.csv
+docker compose cp seed/users.csv web:/app/users.csv
+docker compose cp seed/urls.csv  web:/app/urls.csv
+docker compose cp seed/events.csv web:/app/events.csv
+docker compose exec web python seed/load_csv.py users.csv urls.csv events.csv
 # → Loaded 400 rows into User ...
 # → Loaded 2000 rows into Url ...
 # → Loaded 3422 rows into Event ...
@@ -149,10 +149,10 @@ tests/test_events.py     — event listing and detail parsing
 ## Load Testing
 
 ```bash
-k6 run load_test.js
+k6 run load_test/load_test.js
 ```
 
-Ramps to 500 concurrent users over 90 seconds. Each run uses a unique timestamp prefix for generated usernames (via k6's `setup()` function), so re-running against a populated database does not produce 409 conflicts — **do not remove the `setup()` function** from `load_test.js`.
+Ramps to 500 concurrent users over 90 seconds. Each run uses a unique timestamp prefix for generated usernames (via k6's `setup()` function), so re-running against a populated database does not produce 409 conflicts — **do not remove the `setup()` function** from `load_test/load_test.js`.
 
 **Results (10-core MacBook, 3 web replicas):**
 
@@ -162,7 +162,7 @@ Ramps to 500 concurrent users over 90 seconds. Each run uses a unique timestamp 
 | p95 latency | ~470ms | < 500ms |
 | Throughput | ~700 req/s | 100+ req/s |
 
-Outputs `load-summary.html` (HTML report) and `load-summary.json`.
+Outputs `load_test/load-summary.html` (HTML report) and `load_test/load-summary.json`.
 
 ---
 
@@ -171,12 +171,12 @@ Outputs `load-summary.html` (HTML report) and `load-summary.json`.
 Three CSV files are included as seed data. They must be loaded **in this order** (FK constraint: urls reference users, events reference both):
 
 ```bash
-docker compose exec web python load_csv.py users.csv urls.csv events.csv
+docker compose exec web python seed/load_csv.py users.csv urls.csv events.csv
 ```
 
-`load_csv.py` auto-detects the model from the CSV headers, preserves explicit IDs, and resets PostgreSQL sequences after each bulk insert. Multiple files can be passed in one invocation.
+`seed/load_csv.py` auto-detects the model from the CSV headers, preserves explicit IDs, and resets PostgreSQL sequences after each bulk insert. Multiple files can be passed in one invocation.
 
-> **Important:** `DATABASE_HOST=db` in `.env` is the Docker-internal service name. Running `load_csv.py` directly from the host will fail with a DNS error — always run it via `docker compose exec web`.
+> **Important:** `DATABASE_HOST=db` in `.env` is the Docker-internal service name. Running `seed/load_csv.py` directly from the host will fail with a DNS error — always run it via `docker compose exec web`.
 
 The `product` table requires no seed data. `/products` returns `[]` by design until product rows are inserted.
 
@@ -235,13 +235,23 @@ ProdBreaker/
 ├── Dockerfile                   # Multi-stage: builder + runtime (python:3.13)
 ├── docker-compose.yml           # Local dev: app + db + redis + nginx + monitoring
 ├── docker-stack.yml             # Docker Swarm: 3 web replicas, self-healing chaos demo
-├── load_test.js                 # k6 load test (500 VUs)
-├── load_csv.py                  # CSV seed data loader
-├── RUNBOOK.md                   # 3 AM emergency guide
-├── DECISION_LOG.md              # Why we chose each technology
-├── CAPACITY_PLAN.md             # How many users, what breaks first
-├── FAILURE_MODES.md             # What breaks + chaos reproduction
-└── PERFORMANCE_REPORT.md        # Load test results + bottleneck analysis
+├── load_test/
+│   ├── load_test.js             # k6 load test (500 VUs)
+│   ├── load-summary.html        # Last run HTML report
+│   └── load-summary.json        # Last run JSON summary
+├── seed/
+│   ├── seed.py                  # Database seeder
+│   ├── load_csv.py              # CSV seed data loader
+│   ├── users.csv                # Seed users
+│   ├── urls.csv                 # Seed URLs
+│   └── events.csv               # Seed events
+└── docs/
+    ├── RUNBOOK.md               # 3 AM emergency guide
+    ├── DECISION_LOG.md          # Why we chose each technology
+    ├── CAPACITY_PLAN.md         # How many users, what breaks first
+    ├── FAILURE_MODES.md         # What breaks + chaos reproduction
+    ├── ARCHITECTURE.md          # System diagram, request flow, data model
+    └── PERFORMANCE_REPORT.md    # Load test results + bottleneck analysis
 ```
 
 ---
@@ -250,12 +260,12 @@ ProdBreaker/
 
 | Document | Contents |
 |---|---|
-| [RUNBOOK.md](RUNBOOK.md) | Step-by-step alert response guides |
-| [DECISION_LOG.md](DECISION_LOG.md) | Why Gunicorn, Redis, Nginx, Postgres pool, etc. |
-| [CAPACITY_PLAN.md](CAPACITY_PLAN.md) | Load limits, scaling strategies, weakest links |
-| [FAILURE_MODES.md](FAILURE_MODES.md) | What breaks, observed responses, recovery steps |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System diagram, request flow, data model, caching strategy |
-| [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | Benchmarks, bottleneck fixes, before/after numbers |
+| [RUNBOOK.md](docs/RUNBOOK.md) | Step-by-step alert response guides |
+| [DECISION_LOG.md](docs/DECISION_LOG.md) | Why Gunicorn, Redis, Nginx, Postgres pool, etc. |
+| [CAPACITY_PLAN.md](docs/CAPACITY_PLAN.md) | Load limits, scaling strategies, weakest links |
+| [FAILURE_MODES.md](docs/FAILURE_MODES.md) | What breaks, observed responses, recovery steps |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram, request flow, data model, caching strategy |
+| [PERFORMANCE_REPORT.md](docs/PERFORMANCE_REPORT.md) | Benchmarks, bottleneck fixes, before/after numbers |
 
 ---
 
@@ -265,10 +275,10 @@ ProdBreaker/
 The `product` table does not exist. This happens if the container image was built before `Product` was added to `db.create_tables()` in `app/__init__.py`. Rebuild: `docker compose up --build -d`.
 
 **`load_csv.py` fails with "could not translate host name db"**
-You are running the script from the host. `DATABASE_HOST=db` only resolves inside Docker. Use `docker compose exec web python load_csv.py ...` instead.
+You are running the script from the host. `DATABASE_HOST=db` only resolves inside Docker. Use `docker compose exec web python seed/load_csv.py ...` instead.
 
 **k6 `create user 201` failing at high rate (409 Conflict)**
-The database has users from a previous run and the `setup()` function was removed from `load_test.js`. Restore `setup()` — it generates a per-run `runId` that prefixes all generated usernames, preventing collisions across runs. Do not truncate the database to work around this.
+The database has users from a previous run and the `setup()` function was removed from `load_test/load_test.js`. Restore `setup()` — it generates a per-run `runId` that prefixes all generated usernames, preventing collisions across runs. Do not truncate the database to work around this.
 
 **pytest fails with `could not translate host name db`**
 `init_db()` is overwriting the test's SQLite database with a Postgres connection. Ensure `app/database.py` only calls `db.initialize()` (and registers request hooks) inside `if db.obj is None:`. The conftest sets `db` to SQLite before calling `create_app()`, so the guard prevents the overwrite.
