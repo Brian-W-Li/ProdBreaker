@@ -59,7 +59,7 @@ Every `GET /<short_code>` redirect and every URL create/update wrote an `Event` 
 ## Load Test Configuration
 
 **Tool:** k6  
-**Script:** `load_test.js`  
+**Script:** `load_test/load_test.js`  
 **Stages:**
 
 ```
@@ -74,8 +74,8 @@ Hold 500 VUs for 30s
 - `http_req_duration p(95) < 500ms` ✅ (actual: ~470ms)
 - `error_rate < 5%` ✅ (actual: 0.00%)
 
-**Run:** `k6 run load_test.js`  
-Outputs `load-summary.json` + `load-summary.html` (HTML report via k6-reporter).
+**Run:** `k6 run load_test/load_test.js`  
+Outputs `load_test/load-summary.json` + `load_test/load-summary.html` (HTML report via k6-reporter).
 
 ---
 
